@@ -40,8 +40,12 @@ import { TicketStatus } from '../../domain/value-objects/TicketStatus';
 import type {
   SendMessageCommand,
   SendMessageResult,
+  UploadMediaCommand,
+  UploadMediaResult,
+  SendMediaCommand,
   WhatsAppGateway
 } from '../../application/ports/WhatsAppGateway';
+import type { MediaStorage } from '../../application/ports/MediaStorage';
 import type {
   ParsedWebhook,
   WhatsAppWebhookParser
@@ -669,11 +673,49 @@ export class InMemoryTicketEventRepository implements TicketEventRepository {
 
 export class FakeWhatsAppGateway implements WhatsAppGateway {
   calls: Array<{ command: SendMessageCommand; result: SendMessageResult }> = [];
+  mediaCalls: Array<{
+    upload?: UploadMediaCommand;
+    send?: SendMediaCommand;
+    result: SendMessageResult | UploadMediaResult;
+  }> = [];
 
   async sendText(command: SendMessageCommand): Promise<SendMessageResult> {
     const result = { providerMessageId: `wamid.MOCK.${this.calls.length + 1}` };
     this.calls.push({ command, result });
     return result;
+  }
+
+  async uploadMedia(command: UploadMediaCommand): Promise<UploadMediaResult> {
+    const result = { fileId: `media.MOCK.${this.mediaCalls.length + 1}` };
+    this.mediaCalls.push({ upload: command, result });
+    return result;
+  }
+
+  async sendMedia(command: SendMediaCommand): Promise<SendMessageResult> {
+    const result = { providerMessageId: `wamid.MOCK.MEDIA.${this.mediaCalls.length + 1}` };
+    this.mediaCalls.push({ send: command, result });
+    return result;
+  }
+}
+
+export class InMemoryMediaStorage implements MediaStorage {
+  files = new Map<string, Buffer>();
+
+  async store(input: {
+    orgId: string;
+    filename: string;
+    mimeType: string;
+    data: Buffer;
+  }): Promise<{ storedPath: string; url: string }> {
+    const storedPath = `media/${input.orgId}/${Math.random().toString(36).slice(2)}`;
+    this.files.set(storedPath, input.data);
+    return { storedPath, url: `/api/organizations/${input.orgId}/media/${storedPath}` };
+  }
+
+  async read(storedPath: string): Promise<Buffer> {
+    const data = this.files.get(storedPath);
+    if (!data) throw new Error('arquivo não encontrado no armazenamento de teste');
+    return data;
   }
 }
 
@@ -726,6 +768,7 @@ export function createWhatsAppTestServices() {
     gateway,
     parser,
     cipher,
+    mediaStorage: new InMemoryMediaStorage(),
     idGenerator,
     clock: { now: () => new Date('2026-08-19T12:00:00.000Z') }
   };

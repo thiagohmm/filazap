@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { ArrowRight, LockKeyhole, Mail } from 'lucide-react';
 import { saveSession } from '../lib/session';
+import AuthBrand from '../components/AuthBrand';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,40 +39,49 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="auth-wrap">
-      <div className="auth-box card">
-        <h1 className="auth-title">FilaZap</h1>
-        <p className="auth-sub">Central de atendimento WhatsApp</p>
+    <main className="auth-layout">
+      <AuthBrand />
+      <section className="auth-form-panel">
+        <div className="auth-box">
+          <div className="auth-mobile-logo">FilaZap</div>
+          <span className="eyebrow">Bem-vindo de volta</span>
+          <h1 className="auth-title">Acesse sua conta</h1>
+          <p className="auth-sub">Entre para acompanhar sua operação de atendimento.</p>
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="email">E-mail</label>
-            <input
+            <div className="input-icon"><Mail size={17} /><input
               id="email"
               type="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
+              placeholder="voce@empresa.com"
+              autoComplete="email"
               required
-            />
+            /></div>
           </div>
           <div className="field">
             <label htmlFor="password">Senha</label>
-            <input
+            <div className="input-icon"><LockKeyhole size={17} /><input
               id="password"
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              placeholder="Digite sua senha"
+              autoComplete="current-password"
               required
-            />
+            /></div>
           </div>
-          {error && <div className="form-error">{error}</div>}
+          {error && <div className="alert alert-error auth-alert">{error}</div>}
           <button type="submit" className="btn btn-block" disabled={loading}>
-            {loading ? 'Entrando...' : 'Entrar'}
+            {loading ? <><span className="button-spinner" />Entrando...</> : <>Entrar na plataforma <ArrowRight size={17} /></>}
           </button>
         </form>
-        <p style={{ textAlign: 'center', marginTop: 16 }}>
-          Não tem uma empresa? <Link href="/onboarding">Criar conta</Link>
-        </p>
-      </div>
-    </div>
+          <div className="auth-divider"><span>Primeiro acesso?</span></div>
+          <p className="auth-switch">Ainda não tem uma empresa? <Link href="/onboarding">Criar workspace</Link></p>
+          <p className="auth-legal">Ao continuar, você concorda com os termos de uso e privacidade.</p>
+        </div>
+      </section>
+    </main>
   );
 }

@@ -152,6 +152,8 @@ export class ReceiveWhatsAppMessage {
         queueEnteredAt: messageTimestamp,
         status: createdStatus
       });
+      // O ticket precisa existir no banco antes do evento por causa da FK.
+      await this.deps.tickets.save(ticket);
       await this.deps.ticketEvents.save(
         TicketEvent.create({
           id: this.deps.idGenerator(),

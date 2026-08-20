@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import { KeyRound, MessageCircleMore, Palette, Settings2 } from 'lucide-react';
 import { loadSession, saveSession } from '../../lib/session';
 import type { OrganizationInfo } from '../../lib/session';
 import { useOrgTheme } from '../../lib/useOrgTheme';
@@ -211,11 +212,7 @@ export default function ConfiguracoesPage() {
   }
 
   if (!session || !selectedOrg) {
-    return (
-      <div className="dash">
-        <div className="card">Carregando...</div>
-      </div>
-    );
+    return <div className="loading-screen"><span className="spinner" />Carregando workspace...</div>;
   }
 
   const selectedChannel = channels.find((c) => c.id === selectedChannelId);
@@ -224,10 +221,14 @@ export default function ConfiguracoesPage() {
     <div>
       <Topbar session={session} selectedOrg={selectedOrg} onSelectOrg={selectOrg} />
 
-      <div className="dash">
-        <div className="page-head">
-          <h2>Configurações</h2>
+      <main className="dash page-content">
+        <div className="page-head page-head-row">
+          <div>
+          <span className="eyebrow">Administração</span>
+          <h1>Configurações</h1>
           <p>Gerencie os números de WhatsApp e a aparência de {selectedOrg.name}.</p>
+          </div>
+          <div className="head-stat"><Settings2 size={20} /><span><strong>{channels.length}</strong> canal(is)</span></div>
         </div>
 
         {notice && <div className="alert alert-success">{notice}</div>}
@@ -237,7 +238,7 @@ export default function ConfiguracoesPage() {
           <div>
             <div className="card settings-card">
               <div className="card-head">
-                <div className="card-icon">1</div>
+                <div className="card-icon"><MessageCircleMore size={20} /></div>
                 <div>
                   <h3>Adicionar número</h3>
                   <p className="card-sub">
@@ -279,7 +280,7 @@ export default function ConfiguracoesPage() {
 
             <div className="card settings-card" style={{ marginTop: 20 }}>
               <div className="card-head">
-                <div className="card-icon">3</div>
+                <div className="card-icon"><Palette size={20} /></div>
                 <div>
                   <h3>Aparência</h3>
                   <p className="card-sub">
@@ -338,7 +339,7 @@ export default function ConfiguracoesPage() {
 
           <div className="card settings-card">
             <div className="card-head">
-              <div className="card-icon">2</div>
+              <div className="card-icon"><KeyRound size={20} /></div>
               <div>
                 <h3>Credenciais do número</h3>
                 <p className="card-sub">
@@ -422,7 +423,7 @@ export default function ConfiguracoesPage() {
             )}
           </div>
         </div>
-      </div>
+      </main>
     </div>
   );
 }

@@ -36,6 +36,7 @@ export class ListMessages {
         direction: m.direction,
         type: m.type,
         body: m.body,
+        mediaPath: m.mediaPath,
         senderUserId: m.senderUserId,
         providerStatus: m.providerStatus,
         createdAt: m.createdAt

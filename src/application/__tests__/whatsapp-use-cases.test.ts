@@ -70,6 +70,7 @@ function build() {
     members: base.members,
     ticketEvents: wa.ticketEvents,
     gateway: wa.gateway,
+    mediaStorage: wa.mediaStorage,
     cipher: wa.cipher,
     clock: wa.clock,
     logger: base.logger,
@@ -284,6 +285,12 @@ describe('ReceiveWhatsAppMessage', () => {
     expect(ticket).not.toBeNull();
     expect(ticket!.status).toBe('WAITING');
     expect(ticket!.queueEnteredAt.getTime()).toBe(1700000001 * 1000);
+    const events = await services.wa.ticketEvents.findByTicketId(
+      org.organizationId,
+      ticket!.id
+    );
+    expect(events).toHaveLength(1);
+    expect(events[0].eventType).toBe('TICKET_OPENED');
   });
 
   it('mensagens adicionais do mesmo cliente não criam novo ticket nem mudam queue_entered_at', async () => {

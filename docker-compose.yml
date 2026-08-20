@@ -8,8 +8,9 @@ services:
       POSTGRES_USER: filazap
       POSTGRES_PASSWORD: filazap
       POSTGRES_DB: filazap
+    # Bind em 127.0.0.1: não expor o banco para a rede (S8)
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     volumes:
       - filazap_pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -23,44 +24,56 @@ services:
     profiles: ["optional"]
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
 
   mailpit:
     image: axllent/mailpit:latest
     profiles: ["optional"]
     restart: unless-stopped
     ports:
-      - "1025:1025"
-      - "8025:8025"
+      - "127.0.0.1:1025:1025"
+      - "127.0.0.1:8025:8025"
 
   whatsapp-mock:
     build:
       context: .
       dockerfile: Dockerfile.whatsapp-mock
     restart: unless-stopped
+    # Bind em 127.0.0.1: o mock é apenas para desenvolvimento local (S8)
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:4000/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   app:
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    env_file:
+      - .env
     environment:
-      NODE_ENV: development
+      NODE_ENV: production
       DATABASE_URL: postgresql://filazap:filazap@postgres:5432/filazap
-      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me}
-      WHATSAPP_CREDENTIAL_ENCRYPTION_KEY: ${WHATSAPP_CREDENTIAL_ENCRYPTION_KEY:-local-dev-encryption-key}
       WHATSAPP_API_URL: http://whatsapp-mock:4000/graph
+      SEED_DEMO_DATA: "true"
     ports:
-      - "3000:3000"
-    volumes:
-      - ./src:/app/src
-      - ./prisma:/app/prisma
+      - "127.0.0.1:3000:3000"
     depends_on:
       postgres:
         condition: service_healthy
-    command: sh -c "npx prisma migrate deploy && npm run dev"
+      whatsapp-mock:
+        condition: service_healthy
+    command: sh -c "npx prisma migrate deploy && npm run db:seed && npm run start"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
 
 volumes:
   filazap_pgdata:

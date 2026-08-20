@@ -14,4 +14,4 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-CMD ["npm", "test"]
+CMD ["npm", "run", "test:all"]

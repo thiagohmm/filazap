@@ -13,9 +13,11 @@ import type { AuditLogger } from '../ports/AuditLogger';
 import type { Clock } from '../ports/Clock';
 import type { ContactRepository } from '../ports/ContactRepository';
 import type { CredentialCipher } from '../ports/CredentialCipher';
+import type { MediaStorage } from '../ports/MediaStorage';
 import type { MessageRepository } from '../ports/MessageRepository';
 import type { OrganizationMemberRepository } from '../ports/OrganizationMemberRepository';
 import type { TicketEventRepository } from '../ports/TicketEventRepository';
+import type { SendMessageResult } from '../ports/WhatsAppGateway';
 import type { TicketRepository } from '../ports/TicketRepository';
 import type { WhatsAppChannelRepository } from '../ports/WhatsAppChannelRepository';
 import type { WhatsAppGateway } from '../ports/WhatsAppGateway';
@@ -32,6 +34,7 @@ export class SendMessage {
       members: OrganizationMemberRepository;
       ticketEvents: TicketEventRepository;
       gateway: WhatsAppGateway;
+      mediaStorage: MediaStorage;
       cipher: CredentialCipher;
       clock: Clock;
       logger: AuditLogger;
@@ -111,15 +114,37 @@ export class SendMessage {
     }
     const accessToken = this.deps.cipher.decrypt(channel.accessTokenEncrypted);
 
-    const result = await this.deps.gateway.sendText({
-      channel: {
-        phoneNumberId: channel.phoneNumberId,
-        accessToken
-      },
-      to: contact.phoneE164,
-      type: 'TEXT',
-      body: input.body
-    });
+    let result: SendMessageResult;
+    const isImage = input.media?.mimeType?.startsWith('image/') ?? false;
+
+    if (input.media) {
+      const fileData = await this.deps.mediaStorage.read(input.media.storedPath);
+      const uploaded = await this.deps.gateway.uploadMedia({
+        channel: { phoneNumberId: channel.phoneNumberId, accessToken },
+        data: fileData,
+        mimeType: input.media.mimeType,
+        filename: input.media.filename
+      });
+
+      result = await this.deps.gateway.sendMedia({
+        channel: { phoneNumberId: channel.phoneNumberId, accessToken },
+        to: contact.phoneE164,
+        fileRef: {
+          fileId: uploaded.fileId,
+          mimeType: input.media.mimeType,
+          filename: input.media.filename
+        },
+        caption: input.media.caption ?? null,
+        isImage
+      });
+    } else {
+      result = await this.deps.gateway.sendText({
+        channel: { phoneNumberId: channel.phoneNumberId, accessToken },
+        to: contact.phoneE164,
+        type: 'TEXT',
+        body: input.body
+      });
+    }
 
     const message = Message.create({
       id: this.deps.idGenerator(),
@@ -128,8 +153,13 @@ export class SendMessage {
       contactId: contact.id,
       whatsappMessageId: result.providerMessageId,
       direction: MessageDirection.OUTBOUND,
-      type: 'TEXT',
-      body: input.body,
+      type: input.media
+        ? isImage
+          ? 'IMAGE'
+          : 'DOCUMENT'
+        : 'TEXT',
+      body: input.media?.caption ?? (input.body || null),
+      mediaPath: input.media?.storedPath ?? null,
       senderUserId: input.actorUserId,
       providerStatus: 'SENT',
       providerTimestamp: now,
@@ -149,7 +179,9 @@ export class SendMessage {
         id: message.id,
         ticketId: message.ticketId,
         direction: message.direction,
+        type: message.type,
         body: message.body,
+        mediaPath: message.mediaPath,
         providerStatus: message.providerStatus,
         createdAt: message.createdAt
       }

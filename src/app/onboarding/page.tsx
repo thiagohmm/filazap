@@ -3,7 +3,9 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { ArrowRight, Building2, LockKeyhole, Mail, UserRound } from 'lucide-react';
 import { saveSession } from '../lib/session';
+import AuthBrand from '../components/AuthBrand';
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -51,59 +53,66 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="auth-wrap">
-      <div className="auth-box card">
-        <h1 className="auth-title">Criar sua empresa</h1>
-        <p className="auth-sub">Comece sua central de atendimento</p>
+    <main className="auth-layout">
+      <AuthBrand />
+      <section className="auth-form-panel onboarding-panel">
+        <div className="auth-box">
+          <div className="auth-mobile-logo">FilaZap</div>
+          <span className="eyebrow">Comece agora</span>
+          <h1 className="auth-title">Crie seu workspace</h1>
+          <p className="auth-sub">Configure sua empresa e centralize o atendimento em poucos minutos.</p>
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="name">Nome da empresa</label>
-            <input
+            <div className="input-icon"><Building2 size={17} /><input
               id="name"
               value={form.name}
               onChange={(e) => update('name', e.target.value)}
+              placeholder="Ex.: Empresa Exemplo"
               required
-            />
+            /></div>
           </div>
           <div className="field">
             <label htmlFor="adminName">Seu nome</label>
-            <input
+            <div className="input-icon"><UserRound size={17} /><input
               id="adminName"
               value={form.adminName}
               onChange={(e) => update('adminName', e.target.value)}
+              placeholder="Nome completo"
               required
-            />
+            /></div>
           </div>
           <div className="field">
             <label htmlFor="adminEmail">Seu e-mail</label>
-            <input
+            <div className="input-icon"><Mail size={17} /><input
               id="adminEmail"
               type="email"
               value={form.adminEmail}
               onChange={(e) => update('adminEmail', e.target.value)}
+              placeholder="voce@empresa.com"
               required
-            />
+            /></div>
           </div>
           <div className="field">
             <label htmlFor="adminPassword">Senha</label>
-            <input
+            <div className="input-icon"><LockKeyhole size={17} /><input
               id="adminPassword"
               type="password"
               value={form.adminPassword}
               onChange={(e) => update('adminPassword', e.target.value)}
+              placeholder="Mínimo de 8 caracteres"
               minLength={8}
               required
-            />
+            /></div>
           </div>
-          {error && <div className="form-error">{error}</div>}
+          {error && <div className="alert alert-error auth-alert">{error}</div>}
           <button type="submit" className="btn btn-block" disabled={loading}>
-            {loading ? 'Criando...' : 'Criar empresa'}
+            {loading ? <><span className="button-spinner" />Criando...</> : <>Criar workspace <ArrowRight size={17} /></>}
           </button>
         </form>
-        <p style={{ textAlign: 'center', marginTop: 16 }}>
-          Já tem conta? <Link href="/login">Entrar</Link>
-        </p>
-      </div>
-    </div>
+          <p className="auth-switch">Já possui uma conta? <Link href="/login">Entrar na plataforma</Link></p>
+        </div>
+      </section>
+    </main>
   );
 }

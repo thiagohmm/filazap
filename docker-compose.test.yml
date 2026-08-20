@@ -21,10 +21,11 @@ services:
       context: .
       dockerfile: Dockerfile.test
     restart: "no"
+    env_file:
+      - .env
     environment:
       NODE_ENV: test
       DATABASE_URL: postgresql://filazap:filazap@postgres:5432/filazap_test
-      JWT_SECRET: ${JWT_SECRET:-local-test-secret-change-me}
     depends_on:
       postgres:
         condition: service_healthy

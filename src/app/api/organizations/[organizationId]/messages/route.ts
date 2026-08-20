@@ -1,24 +1,120 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { useCases } from '@/container';
-import { sendMessageSchema } from '@/presentation/validators/sendMessage';
+import { useCases, mediaStorage } from '@/container';
+import type { SendMessageMediaInput } from '@/application/dto/SendMessageDTO';
 import { toErrorResponse } from '@/presentation/api/helpers';
 import { getSession } from '@/presentation/api/session';
 
 export const runtime = 'nodejs';
 
-export async function POST(req: NextRequest) {
+const MAX_MEDIA_BYTES = 16 * 1024 * 1024; // 16 MB
+
+async function handleForm(req: NextRequest, organizationId: string) {
   const session = await getSession(req);
   if (!session) {
     return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
   }
-  const organizationId = req.nextUrl.pathname.split('/')[3];
+
+  let form;
   try {
+    form = await req.formData();
+  } catch {
+    return NextResponse.json({ error: 'Formato de corpo inválido.' }, { status: 400 });
+  }
+
+  const channelId = String(form.get('channelId') ?? '').trim();
+  const contactId = String(form.get('contactId') ?? '').trim();
+  const body = String(form.get('body') ?? '').trim();
+
+  if (!channelId || !contactId) {
+    return NextResponse.json(
+      { error: 'channel_id e contact_id são obrigatórios.' },
+      { status: 400 }
+    );
+  }
+
+  const file = form.get('file');
+  let media;
+
+  if (file && typeof file !== 'string' && file instanceof File) {
+    const mimeType = file.type || '';
+    const name = file.name || 'arquivo';
+    const bytes = Buffer.from(await file.arrayBuffer());
+
+    if (bytes.length > MAX_MEDIA_BYTES) {
+      return NextResponse.json(
+        { error: 'Arquivo excede o tamanho máximo permitido (16 MB).' },
+        { status: 413 }
+      );
+    }
+
+    const stored = await mediaStorage.store({
+      orgId: organizationId,
+      filename: name,
+      mimeType,
+      data: bytes
+    });
+
+    media = {
+      filename: name,
+      mimeType,
+      storedPath: stored.storedPath,
+      caption: body || null
+    };
+  }
+
+  const input = {
+    actorUserId: session.userId,
+    organizationId,
+    channelId,
+    contactId,
+    body,
+    ...(media ? { media } : {})
+  };
+
+  const output = await useCases.sendMessage.execute(input);
+  return Response.json(output, { status: 201 });
+}
+
+export async function POST(req: NextRequest) {
+  const organizationId = req.nextUrl.pathname.split('/')[3];
+
+  const contentType = (req.headers.get('content-type') ?? '').toLowerCase();
+  if (contentType.includes('multipart/form-data')) {
+    try {
+      return await handleForm(req, organizationId);
+    } catch (error) {
+      return toErrorResponse(error);
+    }
+  }
+
+  // Fallback: corpo JSON (mantido para compatibilidade com clientes existentes)
+  try {
+    const session = await getSession(req);
+    if (!session) {
+      return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
+    }
     const body = await req.json();
-    const input = sendMessageSchema.parse(body);
+    const { channelId, contactId, message: msgBody, media } = body as {
+      channelId: string;
+      contactId: string;
+      message?: string;
+      media?: SendMessageMediaInput;
+    };
+
+    if (!channelId || !contactId) {
+      return NextResponse.json(
+        { error: 'channel_id e contact_id são obrigatórios.' },
+        { status: 400 }
+      );
+    }
+
     const output = await useCases.sendMessage.execute({
       actorUserId: session.userId,
       organizationId,
-      ...input
+      channelId,
+      contactId,
+      body: msgBody ?? '',
+      ...(media ? { media } : {})
     });
     return Response.json(output, { status: 201 });
   } catch (error) {

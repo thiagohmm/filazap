@@ -2,6 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { CheckCheck, Clock3, MessageSquarePlus, Search, Send, UserCheck } from 'lucide-react';
 import { loadSession } from '../../lib/session';
 import type { OrganizationInfo } from '../../lib/session';
 import { useOrgTheme } from '../../lib/useOrgTheme';
@@ -135,6 +136,29 @@ export default function AtendimentoPage() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const bodyRef = useRef<HTMLDivElement | null>(null);
+  const [leftWidth, setLeftWidth] = useState(318);
+  const [rightWidth, setRightWidth] = useState(292);
+  const [wide, setWide] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1200 : true
+  );
+  const [layout, setLayout] = useState({
+    left: 0,
+    width: typeof window !== 'undefined' ? window.innerWidth : 1200
+  });
+  const resizeDirRef = useRef<'left' | 'right' | null>(null);
+
+  useEffect(() => {
+    const measure = () => {
+      setWide(window.innerWidth >= 1200);
+      if (bodyRef.current) {
+        setLayout({ left: bodyRef.current.offsetLeft, width: bodyRef.current.clientWidth });
+      }
+    };
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
 
   useOrgTheme(selectedOrg);
 
@@ -265,6 +289,35 @@ export default function AtendimentoPage() {
     return data;
   }
 
+  function handleStartResize(dir: 'left' | 'right') {
+    if (typeof window === 'undefined') return;
+    resizeDirRef.current = dir;
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    const bodyLeft = bodyRef.current?.offsetLeft ?? 0;
+    const onMove = (e: MouseEvent) => {
+      if (!resizeDirRef.current || !bodyRef.current) return;
+      const viewport = window.innerWidth;
+      const centerMin = 340;
+      const minCol = 240;
+      const maxCol = 480;
+      if (resizeDirRef.current === 'left') {
+        setLeftWidth(Math.min(maxCol, Math.max(minCol, e.clientX - bodyLeft)));
+      } else {
+        setRightWidth(Math.min(maxCol, Math.max(minCol, viewport - e.clientX)));
+      }
+    };
+    const onUp = () => {
+      resizeDirRef.current = null;
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+  }
+
   const handleNext = async () => {
     const out = await api('/tickets/assign-next');
     if (out?.assigned && out.ticket) {
@@ -354,7 +407,7 @@ export default function AtendimentoPage() {
   const selectedTicket = queue.find((q) => q.ticketId === selectedTicketId) ?? null;
 
   if (!session || !selectedOrg) {
-    return <div className="dash"><div className="card">Carregando...</div></div>;
+    return <div className="loading-screen"><span className="spinner" />Carregando central...</div>;
   }
 
   const filteredQueue = filter === 'ALL' ? queue : queue.filter((q) => q.status === filter);
@@ -363,6 +416,7 @@ export default function AtendimentoPage() {
     <div className="atendimento">
       <Topbar session={session} selectedOrg={selectedOrg} onSelectOrg={selectOrg}>
         <div className="search-wrap">
+          <Search className="search-icon" size={16} />
           <input
             className="search-input"
             placeholder="Buscar por nome ou telefone..."
@@ -394,8 +448,25 @@ export default function AtendimentoPage() {
         </div>
       </Topbar>
 
-      <div className="atend-body">
+      <div className="atend-body" ref={bodyRef} style={{
+        gridTemplateColumns: wide
+          ? `${leftWidth}px minmax(340px, 1fr) ${rightWidth}px`
+          : undefined,
+      }}>
+        <div
+          className="resize-handle"
+          data-handle="left"
+          style={{ left: `${leftWidth}px` }}
+          onMouseDown={() => handleStartResize('left')}
+        />
+        <div
+          className="resize-handle"
+          data-handle="right"
+          style={{ left: `${layout.width - rightWidth}px` }}
+          onMouseDown={() => handleStartResize('right')}
+        />
         <aside className="atend-side">
+          <div className="queue-title"><div><span className="eyebrow">Operação</span><h2>Fila de atendimento</h2></div><span className="queue-total">{queue.length}</span></div>
           <div className="counters">
             <div className="counter"><span className="dot waiting"></span>{counters?.waiting ?? 0} aguardando</div>
             <div className="counter"><span className="dot returning"></span>{counters?.returning ?? 0} retornos</div>
@@ -446,12 +517,13 @@ export default function AtendimentoPage() {
 
         <main className="atend-main">
           <div className="next-bar">
-            <button className="btn" onClick={handleNext}>Próximo cliente</button>
+            <div><span className="eyebrow">Atendimento atual</span><strong>Central de conversas</strong></div>
+            <button className="btn" onClick={handleNext}><UserCheck size={17} /> Próximo cliente</button>
             {error && <span className="form-error">{error}</span>}
           </div>
 
           {!selectedTicket ? (
-            <div className="empty-state">Selecione um atendimento para visualizar a conversa.</div>
+            <div className="empty-state"><span className="empty-icon"><MessageSquarePlus size={30} /></span><strong>Selecione uma conversa</strong><p>Escolha um atendimento na fila ou assuma o próximo cliente disponível.</p></div>
           ) : (
             <div className="conversation">
               <div className="conv-head">
@@ -463,13 +535,13 @@ export default function AtendimentoPage() {
                 </div>
                 <div className="conv-actions">
                   {selectedTicket.status === 'WAITING' || selectedTicket.status === 'RETURNING' ? (
-                    <button className="btn" onClick={handleAssign}>Assumir</button>
+                    <button className="btn" onClick={handleAssign}><UserCheck size={16} /> Assumir</button>
                   ) : null}
                   {selectedTicket.status === 'IN_PROGRESS' ? (
-                    <button className="btn" onClick={handleWaitingCustomer}>Aguardar cliente</button>
+                    <button className="btn btn-outline" onClick={handleWaitingCustomer}><Clock3 size={16} /> Aguardar cliente</button>
                   ) : null}
                   {(selectedTicket.status === 'IN_PROGRESS' || selectedTicket.status === 'WAITING_CUSTOMER') ? (
-                    <button className="btn btn-danger" onClick={handleFinish}>Finalizar</button>
+                    <button className="btn btn-danger" onClick={handleFinish}><CheckCheck size={16} /> Finalizar</button>
                   ) : null}
                 </div>
               </div>
@@ -491,7 +563,7 @@ export default function AtendimentoPage() {
                   placeholder="Digite a resposta..."
                   disabled={loading}
                 />
-                <button className="btn" disabled={loading}>Enviar</button>
+                <button className="btn send-button" disabled={loading}><Send size={17} /><span>Enviar</span></button>
               </form>
 
               <form onSubmit={handleAddNote} className="send-form note-form">
@@ -500,7 +572,7 @@ export default function AtendimentoPage() {
                   onChange={(e) => setNoteDraft(e.target.value)}
                   placeholder="Nota interna (não vai ao cliente)..."
                 />
-                <button className="btn btn-info" disabled={loading}>Anotar</button>
+                <button className="btn btn-info" disabled={loading}>Adicionar nota</button>
               </form>
             </div>
           )}

@@ -43,12 +43,29 @@ import {
   MetaWhatsAppGateway
 } from '@/infrastructure';
 import { Aes256GcmCredentialCipher } from '@/infrastructure/security/Aes256GcmCredentialCipher';
+import { LocalMediaStorage } from '@/infrastructure/storage/LocalMediaStorage';
 import { ConsoleAuditLogger } from '@/infrastructure/observability/ConsoleAuditLogger';
 
 const idGenerator = () => randomUUID();
 const generateTemporaryPassword = () => randomUUID().replace(/-/g, '').slice(0, 12);
 
-const secret = process.env.JWT_SECRET ?? '';
+const SECRET_PLACEHOLDER = '__CHANGE_ME_ON_DEPLOY__';
+
+function assertStrongSecret(name: string, value: string, minLength: number): string {
+  if (!value || value === SECRET_PLACEHOLDER || value.length < minLength) {
+    throw new Error(
+      `${name} inválido. Defina um valor forte (mínimo ${minLength} caracteres) em ambiente protegido.`
+    );
+  }
+  return value;
+}
+
+const secret = assertStrongSecret('JWT_SECRET', process.env.JWT_SECRET ?? '', 16);
+const credentialKey = assertStrongSecret(
+  'WHATSAPP_CREDENTIAL_ENCRYPTION_KEY',
+  process.env.WHATSAPP_CREDENTIAL_ENCRYPTION_KEY ?? '',
+  32
+);
 
 const passwordHasher = new BcryptPasswordHasher();
 const tokenService = new JwtTokenService(secret);
@@ -67,13 +84,15 @@ const ticketEvents = new PrismaTicketEventRepository();
 
 const webhookParser = new MetaWhatsAppWebhookParser();
 const credentialCipher = new Aes256GcmCredentialCipher(
-  process.env.WHATSAPP_CREDENTIAL_ENCRYPTION_KEY ?? ''
+  credentialKey
 );
 const whatsappGateway = new MetaWhatsAppGateway({
   baseUrl: () =>
     process.env.WHATSAPP_API_URL ??
     'https://graph.facebook.com/v19.0'
 });
+
+const mediaStorage = new LocalMediaStorage();
 
 export const useCases = {
   createOrganization: new CreateOrganization({
@@ -140,6 +159,7 @@ export const useCases = {
     members,
     ticketEvents,
     gateway: whatsappGateway,
+    mediaStorage,
     cipher: credentialCipher,
     clock: { now: () => new Date() },
     logger,
@@ -244,4 +264,4 @@ export const useCases = {
   })
 };
 
-export { webhookParser, credentialCipher, channels };
+export { webhookParser, credentialCipher, channels, mediaStorage };

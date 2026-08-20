@@ -12,6 +12,7 @@ export type ListMessagesOutput = {
     direction: string;
     type: string;
     body: string | null;
+    mediaPath: string | null;
     senderUserId: string | null;
     providerStatus: string | null;
     createdAt: Date;
