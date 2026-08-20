@@ -6,6 +6,7 @@ import { AssignTicket } from '../use-cases/AssignTicket';
 import { AssignNextTicket } from '../use-cases/AssignNextTicket';
 import { MoveTicketToWaitingCustomer } from '../use-cases/MoveTicketToWaitingCustomer';
 import { FinishTicket } from '../use-cases/FinishTicket';
+import { ReopenTicket } from '../use-cases/ReopenTicket';
 import { AddInternalNote } from '../use-cases/AddInternalNote';
 import { ListQueue } from '../use-cases/ListQueue';
 import { GetOperationalCounters } from '../use-cases/GetOperationalCounters';
@@ -88,6 +89,14 @@ function build() {
     logger: base.logger,
     idGenerator: wa.idGenerator
   });
+  const reopenTicket = new ReopenTicket({
+    tickets: wa.tickets,
+    members: base.members,
+    events: wa.ticketEvents,
+    clock: wa.clock,
+    logger: base.logger,
+    idGenerator: wa.idGenerator
+  });
   const addInternalNote = new AddInternalNote({
     notes: wa.notes,
     contacts: wa.contacts,
@@ -124,6 +133,7 @@ function build() {
     assignNextTicket,
     moveTicketToWaitingCustomer,
     finishTicket,
+    reopenTicket,
     addInternalNote,
     listQueue,
     getOperationalCounters,
@@ -404,6 +414,82 @@ describe('Aguardar cliente e finalizar', () => {
     expect(active!.id).not.toBe(ticket.id);
     expect(active!.status).toBe(TicketStatus.RETURNING);
     expect(active!.queueEnteredAt.getTime()).toBe(1700000900 * 1000);
+  });
+
+  it('reabre atendimento finalizado voltando para IN_PROGRESS com o mesmo responsável', async () => {
+    const { services, org, bia, ticket } = await assignedTicket();
+
+    await services.finishTicket.execute({
+      actorUserId: bia,
+      organizationId: org.organizationId,
+      ticketId: ticket.id
+    });
+
+    const out = await services.reopenTicket.execute({
+      actorUserId: bia,
+      organizationId: org.organizationId,
+      ticketId: ticket.id
+    });
+    expect(out.ticket.status).toBe(TicketStatus.IN_PROGRESS);
+    const saved = (await services.wa.tickets.findById(ticket.id))!;
+    expect(saved.isFinished()).toBe(false);
+    expect(saved.finishedAt).toBeNull();
+    expect(saved.assignedUserId).toBe(bia);
+  });
+
+  it('não reabre ticket finalizado de outro atendente', async () => {
+    const { services, org, bia, ticket } = await assignedTicket();
+    const cao = await addAgent(services, org, 'Cao2');
+    await services.finishTicket.execute({
+      actorUserId: bia,
+      organizationId: org.organizationId,
+      ticketId: ticket.id
+    });
+    await expect(
+      services.reopenTicket.execute({
+        actorUserId: cao,
+        organizationId: org.organizationId,
+        ticketId: ticket.id
+      })
+    ).rejects.toBeInstanceOf(ForbiddenRoleError);
+  });
+
+  it('admin reabre atendimento finalizado de outro atendente', async () => {
+    const { services, org, bia, ticket } = await assignedTicket();
+    await services.finishTicket.execute({
+      actorUserId: bia,
+      organizationId: org.organizationId,
+      ticketId: ticket.id
+    });
+    const out = await services.reopenTicket.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      ticketId: ticket.id
+    });
+    expect(out.ticket.status).toBe(TicketStatus.IN_PROGRESS);
+    const saved = (await services.wa.tickets.findById(ticket.id))!;
+    expect(saved.assignedUserId).toBe(bia);
+  });
+
+  it('não permite finalizar novamente logo após reabrir sem transição (estado persistido)', async () => {
+    // Cobertura simples: reabrir e finalizar de novo funciona para o mesmo agente
+    const { services, org, bia, ticket } = await assignedTicket();
+    await services.finishTicket.execute({
+      actorUserId: bia,
+      organizationId: org.organizationId,
+      ticketId: ticket.id
+    });
+    await services.reopenTicket.execute({
+      actorUserId: bia,
+      organizationId: org.organizationId,
+      ticketId: ticket.id
+    });
+    const out = await services.finishTicket.execute({
+      actorUserId: bia,
+      organizationId: org.organizationId,
+      ticketId: ticket.id
+    });
+    expect(out.ticket.status).toBe(TicketStatus.FINISHED);
   });
 });
 

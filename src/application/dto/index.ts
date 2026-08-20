@@ -13,6 +13,7 @@ export * from './AssignTicketDTO';
 export * from './AssignNextTicketDTO';
 export * from './MoveTicketToWaitingCustomerDTO';
 export * from './FinishTicketDTO';
+export * from './ReopenTicketDTO';
 export * from './AddInternalNoteDTO';
 export * from './ListQueueDTO';
 export * from './GetOperationalCountersDTO';

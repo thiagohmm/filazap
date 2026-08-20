@@ -15,6 +15,7 @@ import {
   AssignNextTicket,
   MoveTicketToWaitingCustomer,
   FinishTicket,
+  ReopenTicket,
   AddInternalNote,
   ListQueue,
   GetOperationalCounters,
@@ -200,6 +201,14 @@ export const useCases = {
     idGenerator
   }),
   finishTicket: new FinishTicket({
+    tickets,
+    members,
+    events: ticketEvents,
+    clock: { now: () => new Date() },
+    logger,
+    idGenerator
+  }),
+  reopenTicket: new ReopenTicket({
     tickets,
     members,
     events: ticketEvents,

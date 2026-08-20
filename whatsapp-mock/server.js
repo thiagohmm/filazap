@@ -23,6 +23,9 @@ function sendJson(res, status, body) {
   res.end(JSON.stringify(body));
 }
 
+const messagesRe = /^\/graph\/[^/]+\/messages$/;
+const mediaRe = /^\/graph\/[^/]+\/media$/;
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
@@ -31,8 +34,21 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // Upload de mídia pela Cloud API (usado pelo SendMessage com anexo)
+  if (req.method === 'POST' && mediaRe.test(url.pathname)) {
+    const auth = req.headers.authorization ?? '';
+    if (!auth.startsWith('Bearer ')) {
+      sendJson(res, 401, { error: 'unauthorized' });
+      return;
+    }
+    await readBody(req); // consomem o multipart mesmo sem armazenar de fato
+    const fileId = `MOCK-${randomUUID()}`;
+    sendJson(res, 200, { id: fileId });
+    return;
+  }
+
   // Envio de mensagem pela Cloud API (usado pelo SendMessage do app)
-  if (req.method === 'POST' && url.pathname.match(/^\/graph\/[^/]+\/messages$/)) {
+  if (req.method === 'POST' && messagesRe.test(url.pathname)) {
     const auth = req.headers.authorization ?? '';
     if (!auth.startsWith('Bearer ')) {
       sendJson(res, 401, { error: 'unauthorized' });
@@ -46,6 +62,18 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { error: 'invalid_json' });
       return;
     }
+
+    // Mensagem de mídia (imagem/documento) enviada após o upload
+    if (parsed.type === 'image' || parsed.type === 'document') {
+      const messageId = `wamid.MOCKIMG.${randomUUID().replace(/-/g, '')}`;
+      sendJson(res, 200, {
+        messaging_product: 'whatsapp',
+        contacts: [{ input: parsed.to, wa_id: parsed.to }],
+        messages: [{ id: messageId }]
+      });
+      return;
+    }
+
     const messageId = `wamid.MOCK.${randomUUID().replace(/-/g, '')}`;
     sendJson(res, 200, {
       messaging_product: 'whatsapp',

@@ -94,6 +94,30 @@ describe('Ticket máquina de estados', () => {
     expect(() => t.finish(new Date())).toThrow(InvalidTicketTransitionError);
   });
 
+  it('reabre ticket finalizado voltando para IN_PROGRESS', () => {
+    const t = makeTicket({
+      status: TicketStatus.FINISHED,
+      assignedUserId: 'user-2',
+      assignedAt: new Date('2026-08-19T11:00:00.000Z'),
+      finishedAt: new Date('2026-08-19T12:00:00.000Z')
+    });
+    const now = new Date('2026-08-19T13:00:00.000Z');
+    t.reopen(now);
+    expect(t.status).toBe(TicketStatus.IN_PROGRESS);
+    expect(t.finishedAt).toBeNull();
+    expect(t.assignedUserId).toBe('user-2');
+  });
+
+  it('não reabre ticket que não está finalizado', () => {
+    const t = makeTicket({ status: TicketStatus.IN_PROGRESS });
+    expect(() => t.reopen(new Date())).toThrow(InvalidTicketTransitionError);
+  });
+
+  it('não reabre ticket finalizado sem responsável', () => {
+    const t = makeTicket({ status: TicketStatus.FINISHED, assignedUserId: null });
+    expect(() => t.reopen(new Date())).toThrow(InvalidTicketTransitionError);
+  });
+
   it('isOpen reflete apenas WAITING e RETURNING', () => {
     expect(makeTicket({ status: TicketStatus.WAITING }).isOpen()).toBe(true);
     expect(makeTicket({ status: TicketStatus.RETURNING }).isOpen()).toBe(true);

@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCheck, Clock3, MessageSquarePlus, Search, Send, UserCheck } from 'lucide-react';
+import { CheckCheck, Clock3, FileText, Image, MessageSquarePlus, Paperclip, RotateCcw, Search, Send, UserCheck, X } from 'lucide-react';
 import { loadSession } from '../../lib/session';
 import type { OrganizationInfo } from '../../lib/session';
 import { useOrgTheme } from '../../lib/useOrgTheme';
@@ -37,7 +37,9 @@ type Message = {
   id: string;
   ticketId: string;
   direction: string;
+  type: string | null;
   body: string | null;
+  mediaPath: string | null;
   createdAt: string;
 };
 
@@ -126,6 +128,7 @@ export default function AtendimentoPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [draft, setDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -139,6 +142,7 @@ export default function AtendimentoPage() {
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const [leftWidth, setLeftWidth] = useState(318);
   const [rightWidth, setRightWidth] = useState(292);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [wide, setWide] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1200 : true
   );
@@ -345,31 +349,89 @@ export default function AtendimentoPage() {
     loadAll();
   };
 
+  const handleReopen = async () => {
+    if (!selectedTicketId) return;
+    await api(`/tickets/${selectedTicketId}/reopen`);
+    loadAll();
+  };
+
+  const mediaUrl = useCallback(
+    (mediaPath: string | null) => {
+      if (!selectedOrg || !mediaPath) return '';
+      return `/api/organizations/${selectedOrg.id}/media/${mediaPath}`;
+    },
+    [selectedOrg]
+  );
+
+  function pickAttachFile() {
+    fileInputRef.current?.click();
+  }
+
+  function handlePickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    setPendingFile(file ?? null);
+    if (e.target) e.target.value = '';
+  }
+
+  function clearPendingFile() {
+    setPendingFile(null);
+  }
+
+  async function refreshMessages(ticketId: string) {
+    if (!session || !selectedOrg) return;
+    const m = await fetch(
+      `/api/organizations/${selectedOrg.id}/tickets/${ticketId}/messages`,
+      { headers: { Authorization: `Bearer ${session.token}` } }
+    ).then((r) => r.json());
+    if (m.messages) setMessages(m.messages);
+  }
+
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedTicketId || !draft.trim()) return;
+    const hasFile = !!pendingFile;
+    if (!selectedTicketId) return;
+    if (!hasFile && !draft.trim()) return;
     const selected = queue.find((q) => q.ticketId === selectedTicketId);
     if (!selected) return;
+    if (selected.status === 'FINISHED') {
+      setError('Atendimento finalizado: não é possível enviar mensagens.');
+      return;
+    }
     setLoading(true);
     try {
-      const out = await api('/messages', 'POST', {
-        channelId: selected.channelId,
-        contactId: selected.contact.id,
-        body: draft
-      });
-      if (out) {
+      let out: unknown = null;
+      if (hasFile) {
+        const fd = new FormData();
+        fd.append('channelId', selected.channelId);
+        fd.append('contactId', selected.contact.id);
+        fd.append('body', draft);
+        fd.append('file', pendingFile!);
+        const res = await fetch(
+          `/api/organizations/${selectedOrg!.id}/messages`,
+          {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${session!.token}` },
+            body: fd
+          }
+        );
+        out = await res.json();
+      } else {
+        out = await api('/messages', 'POST', {
+          channelId: selected.channelId,
+          contactId: selected.contact.id,
+          body: draft
+        });
+      }
+      if ((out as { message?: unknown }) && (out as { message?: unknown }).message) {
         setDraft('');
-        const m = await fetch(
-          `/api/organizations/${selectedOrg!.id}/tickets/${selectedTicketId}/messages`,
-          { headers: { Authorization: `Bearer ${session!.token}` } }
-        ).then((r) => r.json());
-        if (m.messages) setMessages(m.messages);
+        clearPendingFile();
+        await refreshMessages(selectedTicketId);
         loadAll();
       }
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   const handleAddNote = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -405,6 +467,7 @@ export default function AtendimentoPage() {
   };
 
   const selectedTicket = queue.find((q) => q.ticketId === selectedTicketId) ?? null;
+  const isFinished = selectedTicket?.status === 'FINISHED';
 
   if (!session || !selectedOrg) {
     return <div className="loading-screen"><span className="spinner" />Carregando central...</div>;
@@ -543,6 +606,9 @@ export default function AtendimentoPage() {
                   {(selectedTicket.status === 'IN_PROGRESS' || selectedTicket.status === 'WAITING_CUSTOMER') ? (
                     <button className="btn btn-danger" onClick={handleFinish}><CheckCheck size={16} /> Finalizar</button>
                   ) : null}
+                  {selectedTicket.status === 'FINISHED' ? (
+                    <button className="btn btn-outline" onClick={handleReopen}><RotateCcw size={16} /> Reabrir</button>
+                  ) : null}
                 </div>
               </div>
 
@@ -550,20 +616,77 @@ export default function AtendimentoPage() {
                 {messages.length === 0 && <div className="queue-empty">Nenhuma mensagem.</div>}
                 {messages.map((m) => (
                   <div key={m.id} className={`bubble ${m.direction === 'OUTBOUND' ? 'out' : 'in'}`}>
-                    <span>{m.body}</span>
+                    {m.mediaPath && (
+                      <a
+                        className="attach-media"
+                        href={mediaUrl(m.mediaPath)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {m.type === 'IMAGE' ? (
+                          <img src={mediaUrl(m.mediaPath)} alt={m.body ?? 'imagem'} />
+                        ) : (
+                          <span className="attach-doc">
+                            <FileText size={18} />
+                            <span>{m.body || 'Arquivo'}</span>
+                          </span>
+                        )}
+                      </a>
+                    )}
+                    {m.body && <span>{m.body}</span>}
                     <span className="bubble-time">{formatTime(m.createdAt)}</span>
                   </div>
                 ))}
               </div>
 
               <form onSubmit={handleSend} className="send-form">
+                {isFinished && (
+                  <div className="queue-empty" style={{ padding: '8px 0' }}>
+                    Atendimento finalizado — mensagens desativadas.
+                  </div>
+                )}
                 <input
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   placeholder="Digite a resposta..."
-                  disabled={loading}
+                  disabled={loading || isFinished}
                 />
-                <button className="btn send-button" disabled={loading}><Send size={17} /><span>Enviar</span></button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  onChange={handlePickFile}
+                  style={{ display: 'none' }}
+                />
+                <button
+                  type="button"
+                  className="btn btn-icon"
+                  title={'Anexar foto ou documento'}
+                  onClick={pickAttachFile}
+                  disabled={loading || isFinished}
+                >
+                  <Paperclip size={17} />
+                </button>
+                {pendingFile && (
+                  <div className="attach-preview">
+                    {pendingFile.type.startsWith('image/') && (
+                      <img src={URL.createObjectURL(pendingFile)} alt="anexo" />
+                    )}
+                    <span className="attach-name">
+                      {pendingFile.type.startsWith('image/') ? <Image size={14} /> : <FileText size={14} />}
+                      {pendingFile.name}
+                    </span>
+                    <button
+                      type="button"
+                      className="attach-remove"
+                      title={'Remover anexo'}
+                      onClick={clearPendingFile}
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
+                <button className="btn send-button" disabled={loading || isFinished}><Send size={17} /><span>Enviar</span></button>
               </form>
 
               <form onSubmit={handleAddNote} className="send-form note-form">

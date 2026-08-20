@@ -189,6 +189,25 @@ export class Ticket {
     }
   }
 
+  reopen(now: Date): void {
+    if (this.props.status !== TicketStatus.FINISHED) {
+      throw new InvalidTicketTransitionError(
+        this.props.status,
+        TicketStatus.IN_PROGRESS
+      );
+    }
+    if (!this.props.assignedUserId) {
+      throw new InvalidTicketTransitionError(
+        this.props.status,
+        TicketStatus.IN_PROGRESS
+      );
+    }
+    this.props.status = TicketStatus.IN_PROGRESS;
+    this.props.finishedAt = null;
+    this.props.waitingCustomerSince = null;
+    this.props.updatedAt = now;
+  }
+
   finish(now: Date): void {
     if (this.props.status === TicketStatus.FINISHED) {
       throw new InvalidTicketTransitionError(

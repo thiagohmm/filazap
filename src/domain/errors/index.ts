@@ -22,3 +22,4 @@ export * from './InvalidTicketStatusError';
 export * from './InvalidTicketTransitionError';
 export * from './TicketAlreadyAssignedError';
 export * from './TicketNotAssignedError';
+export * from './NoActiveTicketError';

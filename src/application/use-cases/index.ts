@@ -15,6 +15,7 @@ export { AssignTicket } from './AssignTicket';
 export { AssignNextTicket } from './AssignNextTicket';
 export { MoveTicketToWaitingCustomer } from './MoveTicketToWaitingCustomer';
 export { FinishTicket } from './FinishTicket';
+export { ReopenTicket } from './ReopenTicket';
 export { AddInternalNote } from './AddInternalNote';
 export { ListQueue } from './ListQueue';
 export { GetOperationalCounters } from './GetOperationalCounters';

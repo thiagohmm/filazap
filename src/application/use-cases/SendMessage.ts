@@ -5,7 +5,7 @@ import {
   ChannelNotFoundError,
   ChannelNotConfiguredError,
   ContactNotFoundError,
-  TicketNotFoundError
+  NoActiveTicketError
 } from '../../domain/errors';
 import { MessageDirection } from '../../domain/value-objects/MessageDirection';
 import { TicketStatus } from '../../domain/value-objects/TicketStatus';
@@ -58,7 +58,7 @@ export class SendMessage {
 
     let ticket = await this.deps.tickets.findActiveByContact(contact.id);
     if (!ticket) {
-      throw new TicketNotFoundError('atendimento aberto para o contato');
+      throw new NoActiveTicketError();
     }
 
     const now = this.deps.clock.now();

@@ -16,7 +16,7 @@ import {
   ChannelNotConfiguredError,
   ChannelNotFoundError,
   ForbiddenRoleError,
-  TicketNotFoundError
+  NoActiveTicketError
 } from '../../domain/errors';
 import { ChannelStatus } from '../../domain/value-objects/ChannelStatus';
 import { Ticket } from '../../domain/entities/Ticket';
@@ -452,7 +452,7 @@ describe('SendMessage', () => {
         contactId: contact!.id,
         body: 'Resposta'
       })
-    ).rejects.toBeInstanceOf(TicketNotFoundError);
+    ).rejects.toBeInstanceOf(NoActiveTicketError);
   });
 });
 

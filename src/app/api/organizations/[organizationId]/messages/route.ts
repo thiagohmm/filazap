@@ -94,12 +94,17 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Não autenticado.' }, { status: 401 });
     }
     const body = await req.json();
-    const { channelId, contactId, message: msgBody, media } = body as {
-      channelId: string;
-      contactId: string;
+    const raw = body as {
+      channelId?: string;
+      contactId?: string;
+      body?: string;
       message?: string;
       media?: SendMessageMediaInput;
     };
+    const channelId = raw.channelId;
+    const contactId = raw.contactId;
+    const msgBody = raw.body ?? raw.message;
+    const { media } = raw;
 
     if (!channelId || !contactId) {
       return NextResponse.json(
