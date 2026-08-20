@@ -1,0 +1,12 @@
+node_modules
+.next
+.git
+.env
+.env.*
+!.env.example
+Dockerfile
+Dockerfile.test
+Dockerfile.whatsapp-mock
+docker-compose*.yml
+coverage
+*.log

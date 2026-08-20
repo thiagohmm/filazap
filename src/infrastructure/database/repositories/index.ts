@@ -1,0 +1,10 @@
+export { PrismaOrganizationRepository } from './PrismaOrganizationRepository';
+export { PrismaUserRepository } from './PrismaUserRepository';
+export { PrismaOrganizationMemberRepository } from './PrismaOrganizationMemberRepository';
+export { PrismaWhatsAppChannelRepository } from './PrismaWhatsAppChannelRepository';
+export { PrismaContactRepository } from './PrismaContactRepository';
+export { PrismaTicketRepository } from './PrismaTicketRepository';
+export { PrismaMessageRepository } from './PrismaMessageRepository';
+export { PrismaWebhookEventRepository } from './PrismaWebhookEventRepository';
+export { PrismaInternalNoteRepository } from './PrismaInternalNoteRepository';
+export { PrismaTicketEventRepository } from './PrismaTicketEventRepository';

@@ -1,0 +1,66 @@
+name: filazap
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: filazap
+      POSTGRES_PASSWORD: filazap
+      POSTGRES_DB: filazap
+    ports:
+      - "5432:5432"
+    volumes:
+      - filazap_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U filazap -d filazap"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    profiles: ["optional"]
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  mailpit:
+    image: axllent/mailpit:latest
+    profiles: ["optional"]
+    restart: unless-stopped
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+
+  whatsapp-mock:
+    build:
+      context: .
+      dockerfile: Dockerfile.whatsapp-mock
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: development
+      DATABASE_URL: postgresql://filazap:filazap@postgres:5432/filazap
+      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me}
+      WHATSAPP_CREDENTIAL_ENCRYPTION_KEY: ${WHATSAPP_CREDENTIAL_ENCRYPTION_KEY:-local-dev-encryption-key}
+      WHATSAPP_API_URL: http://whatsapp-mock:4000/graph
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+      - ./prisma:/app/prisma
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npx prisma migrate deploy && npm run dev"
+
+volumes:
+  filazap_pgdata:

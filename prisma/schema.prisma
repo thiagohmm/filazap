@@ -1,0 +1,225 @@
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "linux-arm64-openssl-3.0.x", "debian-openssl-3.0.x", "linux-musl-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  OWNER
+  ADMIN
+  AGENT
+  VIEWER
+}
+
+model User {
+  id           String               @id @default(cuid())
+  email        String               @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+
+  memberships OrganizationMember[]
+  assignedTickets Ticket[]
+  sentMessages Message[]
+  notes        InternalNote[]
+  ticketEvents TicketEvent[]
+
+  @@index([email])
+}
+
+model Organization {
+  id                String               @id @default(cuid())
+  name              String
+  slug              String               @unique
+  timezone          String               @default("America/Sao_Paulo")
+  plan              String               @default("STARTER")
+  subscriptionStatus String              @default("TRIAL")
+  theme             String               @default("light")
+  brandColor        String               @default("#10b981")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  members           OrganizationMember[]
+  channels          WhatsAppChannel[]
+  contacts          Contact[]
+  tickets           Ticket[]
+  messages          Message[]
+  notes             InternalNote[]
+  ticketEvents      TicketEvent[]
+  webhookEvents     WebhookEvent[]
+}
+
+model OrganizationMember {
+  id             String       @id @default(cuid())
+  organizationId String
+  userId         String
+  role           Role         @default(AGENT)
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@index([organizationId, role])
+}
+
+model WhatsAppChannel {
+  id                String   @id @default(cuid())
+  organizationId    String
+  phoneNumberId     String   @unique
+  businessAccountId String
+  displayPhoneNumber String
+  status            String   @default("DISCONNECTED")
+  accessTokenEncrypted  String?
+  appSecretEncrypted    String?
+  webhookVerifyToken    String?   @unique
+  apiBaseUrl            String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contacts     Contact[]
+  tickets      Ticket[]
+
+  @@index([organizationId])
+}
+
+model Contact {
+  id              String   @id @default(cuid())
+  organizationId  String
+  channelId       String
+  phoneE164       String
+  name            String?
+  metadata        Json?
+  firstContactAt  DateTime @default(now())
+  lastContactAt   DateTime @default(now())
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      WhatsAppChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  tickets      Ticket[]
+  messages     Message[]
+  notes        InternalNote[]
+
+  @@unique([organizationId, channelId, phoneE164])
+  @@index([organizationId, phoneE164])
+  @@index([organizationId, lastContactAt])
+}
+
+model Ticket {
+  id                  String    @id @default(cuid())
+  organizationId      String
+  channelId           String
+  contactId           String
+  sequenceNumber      Int
+  status              String    @default("WAITING")
+  priority            Int       @default(0)
+  queueEnteredAt      DateTime
+  assignedUserId      String?
+  assignedAt          DateTime?
+  firstResponseAt     DateTime?
+  waitingCustomerSince DateTime?
+  finishedAt          DateTime?
+  lastMessageAt       DateTime  @default(now())
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  channel      WhatsAppChannel @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  contact      Contact         @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  assignedUser User?           @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+  messages     Message[]
+  notes        InternalNote[]
+  events       TicketEvent[]
+
+  @@unique([organizationId, sequenceNumber])
+  @@index([organizationId, status, priority, queueEnteredAt])
+  @@index([organizationId, assignedUserId, status, lastMessageAt])
+  @@index([contactId])
+}
+
+model Message {
+  id               String   @id @default(cuid())
+  organizationId   String
+  ticketId         String
+  contactId        String
+  whatsappMessageId String?  @unique
+  direction        String
+  type             String   @default("TEXT")
+  body             String?
+  mediaPath        String?
+  senderUserId     String?
+  providerStatus   String?
+  providerTimestamp DateTime?
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  senderUser   User?        @relation(fields: [senderUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, ticketId, providerTimestamp])
+}
+
+model InternalNote {
+  id             String   @id @default(cuid())
+  organizationId String
+  contactId      String
+  ticketId       String?
+  authorUserId   String
+  body           String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  contact      Contact      @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  ticket       Ticket?      @relation(fields: [ticketId], references: [id], onDelete: SetNull)
+  authorUser   User         @relation(fields: [authorUserId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, contactId])
+  @@index([ticketId])
+}
+
+model TicketEvent {
+  id             String   @id @default(cuid())
+  organizationId String
+  ticketId       String
+  actorUserId    String?
+  eventType      String
+  fromStatus     String?
+  toStatus       String?
+  payload        Json?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  ticket       Ticket       @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actorUser    User?        @relation(fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, ticketId, createdAt])
+}
+
+model WebhookEvent {
+  id               String    @id @default(cuid())
+  organizationId   String?
+  providerEventId  String?   @unique
+  payload          Json
+  processingStatus String    @default("PENDING")
+  attempts         Int       @default(0)
+  receivedAt       DateTime  @default(now())
+  processedAt      DateTime?
+  errorMessage     String?
+
+  organization Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
+
+  @@index([organizationId, processingStatus])
+  @@index([receivedAt])
+}
