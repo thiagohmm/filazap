@@ -6,3 +6,5 @@ export * from './sendMessage';
 export * from './updateChannelCredentials';
 export * from './tickets';
 export * from './searchContacts';
+export * from './passwordReset';
+export * from './teamChat';

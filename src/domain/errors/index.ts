@@ -23,3 +23,6 @@ export * from './InvalidTicketTransitionError';
 export * from './TicketAlreadyAssignedError';
 export * from './TicketNotAssignedError';
 export * from './NoActiveTicketError';
+export * from './InvalidPasswordResetTokenError';
+export * from './MemberCannotBeRemovedError';
+export * from './ChatRecipientUnavailableError';

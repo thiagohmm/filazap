@@ -16,7 +16,8 @@ import {
   ChannelNotConfiguredError,
   ChannelNotFoundError,
   ForbiddenRoleError,
-  NoActiveTicketError
+  NoActiveTicketError,
+  TicketNotAssignedError
 } from '../../domain/errors';
 import { ChannelStatus } from '../../domain/value-objects/ChannelStatus';
 import { Ticket } from '../../domain/entities/Ticket';
@@ -446,6 +447,98 @@ describe('SendMessage', () => {
     expect(services.wa.gateway.calls[0].command.channel.accessToken).toBe(
       'access-token-123'
     );
+  });
+
+  it('impede atendente de responder cliente atribuído a outro atendente', async () => {
+    const { services, org, channel } = await setupWithChannel();
+    await services.updateChannelCredentials.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      channelId: channel.id,
+      accessToken: 'access-token-123'
+    });
+    const first = await services.inviteMember.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      email: 'primeiro@example.com',
+      name: 'Primeiro',
+      role: 'AGENT'
+    });
+    const second = await services.inviteMember.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      email: 'segundo@example.com',
+      name: 'Segundo',
+      role: 'AGENT'
+    });
+    setInbound(services, [
+      { id: 'wamid.locked', from: '+5511999990040', timestamp: '1700000040', body: 'Olá' }
+    ]);
+    await services.receiveWhatsAppMessage.execute({ payload: { object: 'x' } });
+    const contact = await services.wa.contacts.findByChannelAndPhone(
+      org.organizationId,
+      channel.id,
+      '+5511999990040'
+    );
+    const ticket = await services.wa.tickets.findOpenByContact(contact!.id);
+    ticket!.assign(first.member.user.id, services.wa.clock.now());
+    await services.wa.tickets.save(ticket!);
+
+    await expect(services.sendMessage.execute({
+      actorUserId: second.member.user.id,
+      organizationId: org.organizationId,
+      channelId: channel.id,
+      contactId: contact!.id,
+      body: 'Tentativa indevida'
+    })).rejects.toBeInstanceOf(TicketNotAssignedError);
+    expect(services.wa.gateway.calls).toHaveLength(0);
+
+    await expect(services.sendMessage.execute({
+      actorUserId: first.member.user.id,
+      organizationId: org.organizationId,
+      channelId: channel.id,
+      contactId: contact!.id,
+      body: 'Resposta do responsável'
+    })).resolves.toMatchObject({ message: { body: 'Resposta do responsável' } });
+    expect(services.wa.gateway.calls).toHaveLength(1);
+  });
+
+  it('permite administrador responder cliente atribuído a atendente', async () => {
+    const { services, org, channel } = await setupWithChannel();
+    await services.updateChannelCredentials.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      channelId: channel.id,
+      accessToken: 'access-token-123'
+    });
+    const agent = await services.inviteMember.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      email: 'agente@example.com',
+      name: 'Agente',
+      role: 'AGENT'
+    });
+    setInbound(services, [
+      { id: 'wamid.admin-all', from: '+5511999990041', timestamp: '1700000041', body: 'Olá' }
+    ]);
+    await services.receiveWhatsAppMessage.execute({ payload: { object: 'x' } });
+    const contact = await services.wa.contacts.findByChannelAndPhone(
+      org.organizationId,
+      channel.id,
+      '+5511999990041'
+    );
+    const ticket = await services.wa.tickets.findOpenByContact(contact!.id);
+    ticket!.assign(agent.member.user.id, services.wa.clock.now());
+    await services.wa.tickets.save(ticket!);
+
+    await expect(services.sendMessage.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      channelId: channel.id,
+      contactId: contact!.id,
+      body: 'Resposta do administrador'
+    })).resolves.toMatchObject({ message: { body: 'Resposta do administrador' } });
+    expect(services.wa.gateway.calls).toHaveLength(1);
   });
 
   it('lança erro se o canal não tiver credenciais', async () => {

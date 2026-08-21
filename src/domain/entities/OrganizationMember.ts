@@ -66,6 +66,11 @@ export class OrganizationMember {
     return this.props.updatedAt;
   }
 
+  deactivate(now: Date): void {
+    this.props.active = false;
+    this.props.updatedAt = now;
+  }
+
   toJSON() {
     return {
       id: this.props.id,

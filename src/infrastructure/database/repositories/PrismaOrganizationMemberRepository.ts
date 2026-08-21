@@ -6,6 +6,7 @@ import type {
 } from '../../../application/ports/OrganizationMemberRepository';
 import { prisma } from '../prisma';
 import type { $Enums } from '@prisma/client';
+import { TicketStatus } from '../../../domain/value-objects/TicketStatus';
 
 type PrismaMember = {
   id: string;
@@ -62,6 +63,49 @@ export class PrismaOrganizationMemberRepository
       where: { organizationId }
     });
     return records.map((r) => toDomain(r));
+  }
+
+  async findById(id: string): Promise<OrganizationMember | null> {
+    const record = await prisma.organizationMember.findUnique({ where: { id } });
+    return record ? toDomain(record) : null;
+  }
+
+  async deactivateAgentAndReleaseTickets(input: {
+    memberId: string;
+    organizationId: string;
+    userId: string;
+    now: Date;
+  }): Promise<{ removed: boolean; releasedTickets: number }> {
+    return prisma.$transaction(async (tx) => {
+      const removed = await tx.organizationMember.updateMany({
+        where: {
+          id: input.memberId,
+          organizationId: input.organizationId,
+          userId: input.userId,
+          role: 'AGENT',
+          active: true
+        },
+        data: { active: false, updatedAt: input.now }
+      });
+      if (removed.count !== 1) return { removed: false, releasedTickets: 0 };
+
+      const released = await tx.ticket.updateMany({
+        where: {
+          organizationId: input.organizationId,
+          assignedUserId: input.userId,
+          status: { in: [TicketStatus.IN_PROGRESS, TicketStatus.WAITING_CUSTOMER] }
+        },
+        data: {
+          status: TicketStatus.RETURNING,
+          assignedUserId: null,
+          assignedAt: null,
+          waitingCustomerSince: null,
+          queueEnteredAt: input.now,
+          updatedAt: input.now
+        }
+      });
+      return { removed: true, releasedTickets: released.count };
+    });
   }
 
   async findByUserAndOrganization(

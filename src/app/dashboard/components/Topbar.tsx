@@ -75,11 +75,6 @@ export default function Topbar({ session, selectedOrg, onSelectOrg, children }: 
           })}
         </nav>
 
-        <div className="sidebar-support">
-          <span className="support-icon"><Headphones size={18} /></span>
-          <div><strong>Precisa de ajuda?</strong><small>Fale com o suporte</small></div>
-        </div>
-
         <div className="sidebar-user">
           <span className="user-avatar">{initials}</span>
           <span className="user-copy"><strong>{session.user.name}</strong><small>{session.user.email}</small></span>

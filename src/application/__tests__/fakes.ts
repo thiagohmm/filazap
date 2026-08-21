@@ -123,6 +123,29 @@ export class InMemoryMemberRepository implements OrganizationMemberRepository {
     return [...this.store.values()].filter((m) => m.organizationId === organizationId);
   }
 
+  async findById(id: string): Promise<OrganizationMember | null> {
+    return [...this.store.values()].find((member) => member.id === id) ?? null;
+  }
+
+  async deactivateAgentAndReleaseTickets(input: {
+    memberId: string;
+    organizationId: string;
+    userId: string;
+    now: Date;
+  }): Promise<{ removed: boolean; releasedTickets: number }> {
+    const member = await this.findById(input.memberId);
+    if (
+      !member ||
+      member.organizationId !== input.organizationId ||
+      member.userId !== input.userId ||
+      member.role !== Role.AGENT ||
+      !member.active
+    ) return { removed: false, releasedTickets: 0 };
+    member.deactivate(input.now);
+    await this.save(member);
+    return { removed: true, releasedTickets: 0 };
+  }
+
   async findByUserAndOrganization(
     userId: string,
     organizationId: string
@@ -400,6 +423,7 @@ export class InMemoryTicketRepository implements TicketRepository {
         ticket: t,
         contactName,
         contactPhone,
+        assignedUserName: null,
         lastMessageBody: null,
         lastMessageAt: null
       };

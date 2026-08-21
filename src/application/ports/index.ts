@@ -15,3 +15,6 @@ export * from './WebhookSignatureVerifier';
 export * from './CredentialCipher';
 export * from './InternalNoteRepository';
 export * from './TicketEventRepository';
+export * from './PasswordResetRepository';
+export * from './PasswordResetMailer';
+export * from './TeamChatRepository';

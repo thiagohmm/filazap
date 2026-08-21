@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto';
+import { createHash, randomBytes, randomUUID } from 'crypto';
 import {
   CreateOrganization,
   Authenticate,
@@ -25,7 +25,13 @@ import {
   SearchContacts,
   GetMetrics,
   UpdateOrganizationAppearance,
-  GetOrganizationAppearance
+  GetOrganizationAppearance,
+  RequestPasswordReset,
+  ResetPassword,
+  RemoveMember,
+  HeartbeatTeamChat,
+  ListTeamChat,
+  SendTeamChatMessage
 } from '@/application/use-cases';
 import {
   BcryptPasswordHasher,
@@ -41,7 +47,10 @@ import {
   PrismaInternalNoteRepository,
   PrismaTicketEventRepository,
   MetaWhatsAppWebhookParser,
-  MetaWhatsAppGateway
+  MetaWhatsAppGateway,
+  PrismaPasswordResetRepository,
+  ResendPasswordResetMailer,
+  PrismaTeamChatRepository
 } from '@/infrastructure';
 import { Aes256GcmCredentialCipher } from '@/infrastructure/security/Aes256GcmCredentialCipher';
 import { LocalMediaStorage } from '@/infrastructure/storage/LocalMediaStorage';
@@ -84,6 +93,9 @@ const messages = new PrismaMessageRepository();
 const webhookEvents = new PrismaWebhookEventRepository();
 const internalNotes = new PrismaInternalNoteRepository();
 const ticketEvents = new PrismaTicketEventRepository();
+const passwordResets = new PrismaPasswordResetRepository();
+const passwordResetMailer = new ResendPasswordResetMailer();
+const teamChat = new PrismaTeamChatRepository();
 
 const webhookParser = new MetaWhatsAppWebhookParser();
 const credentialCipher = new Aes256GcmCredentialCipher(
@@ -108,6 +120,47 @@ const mediaStorage: MediaStorage = useSupabaseStorage
   : new LocalMediaStorage();
 
 export const useCases = {
+  requestPasswordReset: new RequestPasswordReset({
+    users,
+    passwordResets,
+    mailer: passwordResetMailer,
+    logger,
+    clock: { now: () => new Date() },
+    idGenerator,
+    tokenGenerator: () => randomBytes(32).toString('hex'),
+    hashToken: (token) => createHash('sha256').update(token).digest('hex'),
+    appUrl: process.env.APP_URL ?? 'http://localhost:3000'
+  }),
+  resetPassword: new ResetPassword({
+    passwordResets,
+    passwordHasher,
+    logger,
+    clock: { now: () => new Date() },
+    hashToken: (token) => createHash('sha256').update(token).digest('hex')
+  }),
+  removeMember: new RemoveMember({
+    members,
+    clock: { now: () => new Date() },
+    logger
+  }),
+  heartbeatTeamChat: new HeartbeatTeamChat({
+    members,
+    teamChat,
+    clock: { now: () => new Date() }
+  }),
+  listTeamChat: new ListTeamChat({
+    users,
+    members,
+    teamChat,
+    clock: { now: () => new Date() }
+  }),
+  sendTeamChatMessage: new SendTeamChatMessage({
+    members,
+    teamChat,
+    clock: { now: () => new Date() },
+    logger,
+    idGenerator
+  }),
   createOrganization: new CreateOrganization({
     organizations,
     users,

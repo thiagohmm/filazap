@@ -5,6 +5,7 @@ export type QueueTicket = {
   ticket: Ticket;
   contactName: string | null;
   contactPhone: string;
+  assignedUserName: string | null;
   lastMessageBody: string | null;
   lastMessageAt: Date | null;
 };

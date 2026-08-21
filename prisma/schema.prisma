@@ -28,8 +28,25 @@ model User {
   sentMessages Message[]
   notes        InternalNote[]
   ticketEvents TicketEvent[]
+  passwordResetTokens PasswordResetToken[]
+  teamPresences TeamPresence[]
+  sentTeamChatMessages TeamChatMessage[] @relation("TeamChatSender")
+  receivedTeamChatMessages TeamChatMessage[] @relation("TeamChatRecipient")
 
   @@index([email])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String    @unique
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
 }
 
 model Organization {
@@ -52,6 +69,8 @@ model Organization {
   notes             InternalNote[]
   ticketEvents      TicketEvent[]
   webhookEvents     WebhookEvent[]
+  teamPresences     TeamPresence[]
+  teamChatMessages  TeamChatMessage[]
 }
 
 model OrganizationMember {
@@ -69,6 +88,37 @@ model OrganizationMember {
   @@unique([organizationId, userId])
   @@index([userId])
   @@index([organizationId, role])
+}
+
+model TeamPresence {
+  id             String   @id @default(cuid())
+  organizationId String
+  userId         String
+  lastSeenAt     DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([organizationId, lastSeenAt])
+}
+
+model TeamChatMessage {
+  id              String   @id @default(cuid())
+  organizationId  String
+  senderUserId    String
+  recipientUserId String?
+  body             String
+  createdAt        DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sender       User         @relation("TeamChatSender", fields: [senderUserId], references: [id], onDelete: Cascade)
+  recipient    User?        @relation("TeamChatRecipient", fields: [recipientUserId], references: [id], onDelete: Cascade)
+
+  @@index([organizationId, createdAt])
+  @@index([organizationId, recipientUserId, createdAt])
 }
 
 model WhatsAppChannel {

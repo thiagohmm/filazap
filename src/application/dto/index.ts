@@ -22,3 +22,5 @@ export * from './GetContactProfileDTO';
 export * from './ListContactHistoryDTO';
 export * from './SearchContactsDTO';
 export * from './GetMetricsDTO';
+export * from './RemoveMemberDTO';
+export * from './TeamChatDTO';

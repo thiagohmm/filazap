@@ -27,7 +27,7 @@ export class ListQueue {
     });
 
     return {
-      queue: queue.map(({ ticket, contactName, contactPhone, lastMessageBody, lastMessageAt }) => ({
+      queue: queue.map(({ ticket, contactName, contactPhone, assignedUserName, lastMessageBody, lastMessageAt }) => ({
         ticketId: ticket.id,
         channelId: ticket.channelId,
         sequenceNumber: ticket.sequenceNumber,
@@ -39,6 +39,7 @@ export class ListQueue {
         ),
         priority: ticket.priority,
         assignedUserId: ticket.assignedUserId,
+        assignedUserName,
         contact: {
           id: ticket.contactId,
           name: contactName,

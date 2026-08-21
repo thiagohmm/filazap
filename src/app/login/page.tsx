@@ -61,7 +61,10 @@ export default function LoginPage() {
             /></div>
           </div>
           <div className="field">
-            <label htmlFor="password">Senha</label>
+            <div className="field-label-row">
+              <label htmlFor="password">Senha</label>
+              <Link href="/esqueci-senha" className="forgot-password-link">Esqueci minha senha</Link>
+            </div>
             <div className="input-icon"><LockKeyhole size={17} /><input
               id="password"
               type="password"

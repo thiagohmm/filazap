@@ -5,9 +5,11 @@ import {
   ChannelNotFoundError,
   ChannelNotConfiguredError,
   ContactNotFoundError,
-  NoActiveTicketError
+  NoActiveTicketError,
+  TicketNotAssignedError
 } from '../../domain/errors';
 import { MessageDirection } from '../../domain/value-objects/MessageDirection';
+import { Role } from '../../domain/value-objects/Role';
 import { TicketStatus } from '../../domain/value-objects/TicketStatus';
 import type { AuditLogger } from '../ports/AuditLogger';
 import type { Clock } from '../ports/Clock';
@@ -61,13 +63,21 @@ export class SendMessage {
       throw new NoActiveTicketError();
     }
 
+    const canReplyToAny = actor.role === Role.OWNER || actor.role === Role.ADMIN;
+    if (!canReplyToAny && ticket.assignedUserId !== input.actorUserId) {
+      throw new TicketNotAssignedError(ticket.id);
+    }
+
     const now = this.deps.clock.now();
 
     const isImage = input.media?.mimeType?.startsWith('image/') ?? false;
     const isAudio = input.media?.mimeType?.startsWith('audio/') ?? false;
     const mediaType = isImage ? 'image' : isAudio ? 'audio' : 'document';
 
-    if (ticket.status === TicketStatus.WAITING || ticket.status === TicketStatus.RETURNING) {
+    if (
+      canReplyToAny &&
+      (ticket.status === TicketStatus.WAITING || ticket.status === TicketStatus.RETURNING)
+    ) {
       const result = await this.deps.tickets.assignTicket(
         ticket.id,
         input.actorUserId,

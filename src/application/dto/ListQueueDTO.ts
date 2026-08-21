@@ -18,6 +18,7 @@ export type ListQueueOutput = {
     waitSeconds: number;
     priority: number;
     assignedUserId: string | null;
+    assignedUserName: string | null;
     contact: {
       id: string;
       name: string | null;

@@ -11,6 +11,8 @@ export {
   PrismaInternalNoteRepository,
   PrismaTicketEventRepository
 } from './database/repositories';
+export { PrismaPasswordResetRepository } from './database/repositories';
+export { PrismaTeamChatRepository } from './database/repositories';
 export { BcryptPasswordHasher, JwtTokenService } from './auth';
 export { ConsoleAuditLogger } from './observability/ConsoleAuditLogger';
 export {
@@ -19,3 +21,4 @@ export {
   MetaWhatsAppGateway
 } from './whatsapp';
 export { Aes256GcmCredentialCipher } from './security';
+export { ResendPasswordResetMailer } from './email/ResendPasswordResetMailer';

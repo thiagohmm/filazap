@@ -24,6 +24,7 @@ import { loadSession } from '../../lib/session';
 import type { OrganizationInfo } from '../../lib/session';
 import { useOrgTheme } from '../../lib/useOrgTheme';
 import Topbar from '../components/Topbar';
+import TeamChatPanel from './TeamChatPanel';
 
 type TicketStatus = 'WAITING' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'RETURNING' | 'FINISHED';
 
@@ -36,6 +37,7 @@ type QueueItem = {
   waitSeconds: number;
   priority: number;
   assignedUserId: string | null;
+  assignedUserName: string | null;
   contact: { id: string; name: string | null; phoneE164: string };
   lastMessage: { body: string | null; createdAt: string | null } | null;
 };
@@ -355,14 +357,26 @@ export default function AtendimentoPage() {
     const out = await api('/tickets/assign-next');
     if (out?.assigned && out.ticket) {
       setSelectedTicketId(out.ticket.id);
-      loadAll();
+      setSelectedContactId(out.ticket.contactId);
+      await loadAll();
+      return;
     }
+    if (out && !out.assigned) setError('Nenhum cliente livre para assumir no momento.');
   };
 
   const handleAssign = async () => {
     if (!selectedTicketId) return;
-    await api(`/tickets/${selectedTicketId}/assign`);
-    loadAll();
+    const out = await api(`/tickets/${selectedTicketId}/assign`);
+    if (!out?.ticket) return;
+    setQueue((current) => current.map((ticket) => ticket.ticketId === selectedTicketId
+      ? {
+          ...ticket,
+          status: out.ticket.status,
+          assignedUserId: out.ticket.assignedUserId,
+          assignedUserName: session?.user.name ?? null
+        }
+      : ticket));
+    await loadAll();
   };
 
   const handleWaitingCustomer = async () => {
@@ -671,6 +685,18 @@ export default function AtendimentoPage() {
 
   const selectedTicket = queue.find((q) => q.ticketId === selectedTicketId) ?? null;
   const isFinished = selectedTicket?.status === 'FINISHED';
+  const canReplyToAny = selectedOrg?.role === 'OWNER' || selectedOrg?.role === 'ADMIN';
+  const isReplyLocked = !!selectedTicket && !canReplyToAny && selectedTicket.assignedUserId !== session?.user.id;
+  const isSelectedAvailable = !!selectedTicket &&
+    (selectedTicket.status === 'WAITING' || selectedTicket.status === 'RETURNING') &&
+    !selectedTicket.assignedUserId;
+  const canManageSelected = !!selectedTicket && selectedTicket.assignedUserId === session?.user.id;
+  const ownActiveTicket = queue.find((ticket) =>
+    ticket.assignedUserId === session?.user.id && ticket.status !== 'FINISHED'
+  ) ?? null;
+  const hasAvailableTicket = queue.some((ticket) =>
+    !ticket.assignedUserId && (ticket.status === 'WAITING' || ticket.status === 'RETURNING')
+  );
 
   if (!session || !selectedOrg) {
     return <div className="loading-screen"><span className="spinner" />Carregando central...</div>;
@@ -681,6 +707,7 @@ export default function AtendimentoPage() {
   return (
     <div className="atendimento">
       <Topbar session={session} selectedOrg={selectedOrg} onSelectOrg={selectOrg}>
+        <TeamChatPanel session={session} selectedOrg={selectedOrg} />
         <div className="search-wrap">
           <Search className="search-icon" size={16} />
           <input
@@ -800,16 +827,16 @@ export default function AtendimentoPage() {
                   </div>
                 </div>
                 <div className="conv-actions">
-                  {selectedTicket.status === 'WAITING' || selectedTicket.status === 'RETURNING' ? (
+                  {isSelectedAvailable ? (
                     <button className="btn" onClick={handleAssign}><UserCheck size={16} /> Assumir</button>
                   ) : null}
-                  {selectedTicket.status === 'IN_PROGRESS' ? (
+                  {selectedTicket.status === 'IN_PROGRESS' && canManageSelected ? (
                     <button className="btn btn-outline" onClick={handleWaitingCustomer}><Clock3 size={16} /> Aguardar cliente</button>
                   ) : null}
-                  {(selectedTicket.status === 'IN_PROGRESS' || selectedTicket.status === 'WAITING_CUSTOMER') ? (
+                  {(selectedTicket.status === 'IN_PROGRESS' || selectedTicket.status === 'WAITING_CUSTOMER') && canManageSelected ? (
                     <button className="btn btn-danger" onClick={handleFinish}><CheckCheck size={16} /> Finalizar</button>
                   ) : null}
-                  {selectedTicket.status === 'FINISHED' ? (
+                  {selectedTicket.status === 'FINISHED' && (canManageSelected || canReplyToAny) ? (
                     <button className="btn btn-outline" onClick={handleReopen}><RotateCcw size={16} /> Reabrir</button>
                   ) : null}
                 </div>
@@ -861,12 +888,39 @@ export default function AtendimentoPage() {
                     Atendimento finalizado — mensagens desativadas.
                   </div>
                 )}
+                {!isFinished && isReplyLocked && (
+                  <div className="reply-lock-notice">
+                    <span className="reply-lock-copy">
+                      <strong>{isSelectedAvailable ? 'Cliente disponível' : 'Cliente em atendimento'}</strong>
+                      {isSelectedAvailable
+                        ? 'Assuma este cliente para liberar o envio de mensagens.'
+                        : `Responsável: ${selectedTicket.assignedUserName ?? 'outro atendente'}.`}
+                    </span>
+                    <span className="reply-lock-actions">
+                      {isSelectedAvailable && (
+                        <button type="button" className="btn btn-sm" onClick={handleAssign}>
+                          <UserCheck size={14} /> Assumir cliente
+                        </button>
+                      )}
+                      {!isSelectedAvailable && ownActiveTicket && ownActiveTicket.ticketId !== selectedTicket.ticketId && (
+                        <button type="button" className="btn btn-sm" onClick={() => selectTicket(ownActiveTicket.ticketId)}>
+                          Abrir meu atendimento
+                        </button>
+                      )}
+                      {!isSelectedAvailable && !ownActiveTicket && hasAvailableTicket && (
+                        <button type="button" className="btn btn-sm" onClick={handleNext}>
+                          <UserCheck size={14} /> Assumir próximo
+                        </button>
+                      )}
+                    </span>
+                  </div>
+                )}
                 {!isRecording && (
                   <input
                     value={draft}
                     onChange={(e) => setDraft(e.target.value)}
                     placeholder="Digite a resposta..."
-                    disabled={loading || isFinished}
+                    disabled={loading || isFinished || isReplyLocked}
                   />
                 )}
                 <input
@@ -882,7 +936,7 @@ export default function AtendimentoPage() {
                     className="btn btn-icon"
                     title={'Anexar foto ou documento'}
                     onClick={pickAttachFile}
-                    disabled={loading || isFinished || !!recordedBlob}
+                    disabled={loading || isFinished || isReplyLocked || !!recordedBlob}
                   >
                     <Paperclip size={17} />
                   </button>
@@ -906,7 +960,7 @@ export default function AtendimentoPage() {
                     </button>
                   </div>
                 )}
-                {!isFinished && (
+                {!isFinished && !isReplyLocked && (
                   <>
                     {isRecording ? (
                       <div className="voice-recorder" title="Gravando áudio">
@@ -956,7 +1010,7 @@ export default function AtendimentoPage() {
                     )}
                   </>
                 )}
-                <button className="btn send-button" disabled={loading || isFinished || isRecording}><Send size={17} /><span>Enviar</span></button>
+                <button className="btn send-button" disabled={loading || isFinished || isReplyLocked || isRecording}><Send size={17} /><span>Enviar</span></button>
               </form>
 
               <form onSubmit={handleAddNote} className="send-form note-form">

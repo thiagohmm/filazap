@@ -140,6 +140,7 @@ export class PrismaTicketRepository implements TicketRepository {
       take: filter.limit ?? 100,
       include: {
         contact: { select: { id: true, name: true, phoneE164: true } },
+        assignedUser: { select: { name: true } },
         messages: {
           orderBy: { providerTimestamp: 'desc' },
           take: 1,
@@ -152,6 +153,7 @@ export class PrismaTicketRepository implements TicketRepository {
       ticket: toDomain(r),
       contactName: r.contact.name,
       contactPhone: r.contact.phoneE164,
+      assignedUserName: r.assignedUser?.name ?? null,
       lastMessageBody: r.messages[0]?.body ?? null,
       lastMessageAt: r.messages[0]?.providerTimestamp ?? null
     }));

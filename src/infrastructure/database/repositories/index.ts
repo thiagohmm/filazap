@@ -8,3 +8,5 @@ export { PrismaMessageRepository } from './PrismaMessageRepository';
 export { PrismaWebhookEventRepository } from './PrismaWebhookEventRepository';
 export { PrismaInternalNoteRepository } from './PrismaInternalNoteRepository';
 export { PrismaTicketEventRepository } from './PrismaTicketEventRepository';
+export { PrismaPasswordResetRepository } from './PrismaPasswordResetRepository';
+export { PrismaTeamChatRepository } from './PrismaTeamChatRepository';

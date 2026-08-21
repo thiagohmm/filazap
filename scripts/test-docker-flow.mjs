@@ -36,6 +36,86 @@ async function main() {
     authorization: `Bearer ${auth.token}`,
     'content-type': 'application/json'
   };
+
+  const loginAs = async (email) => json(await fetch(`${appUrl}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email, password: process.env.SEED_ADMIN_PASSWORD })
+  }));
+  const agentAuth = await loginAs('ana@filazap.demo');
+  const otherAgentAuth = await loginAs('carlos@filazap.demo');
+  const authHeaders = (token) => ({
+    authorization: `Bearer ${token}`,
+    'content-type': 'application/json'
+  });
+  for (const token of [auth.token, agentAuth.token, otherAgentAuth.token]) {
+    const presence = await fetch(
+      `${appUrl}/api/organizations/${organization.id}/team-chat/presence`,
+      { method: 'POST', headers: authHeaders(token) }
+    );
+    if (!presence.ok) throw new Error(`Presença no chat rejeitada: HTTP ${presence.status}`);
+  }
+  const directBody = `Mensagem privada E2E ${Date.now()}`;
+  await json(await fetch(`${appUrl}/api/organizations/${organization.id}/team-chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ recipientUserId: agentAuth.user.id, body: directBody })
+  }));
+  const agentChat = await json(await fetch(
+    `${appUrl}/api/organizations/${organization.id}/team-chat`,
+    { headers: authHeaders(agentAuth.token) }
+  ));
+  const otherAgentChat = await json(await fetch(
+    `${appUrl}/api/organizations/${organization.id}/team-chat`,
+    { headers: authHeaders(otherAgentAuth.token) }
+  ));
+  if (!agentChat.messages.some((message) => message.body === directBody)) {
+    throw new Error('Destinatário não recebeu a mensagem privada do chat.');
+  }
+  if (otherAgentChat.messages.some((message) => message.body === directBody)) {
+    throw new Error('Mensagem privada ficou visível para outro atendente.');
+  }
+  const broadcastBody = `Mensagem geral E2E ${Date.now()}`;
+  await json(await fetch(`${appUrl}/api/organizations/${organization.id}/team-chat`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ recipientUserId: null, body: broadcastBody })
+  }));
+  const broadcastChat = await json(await fetch(
+    `${appUrl}/api/organizations/${organization.id}/team-chat`,
+    { headers: authHeaders(otherAgentAuth.token) }
+  ));
+  if (!broadcastChat.messages.some((message) => message.body === broadcastBody)) {
+    throw new Error('Mensagem para toda a equipe não foi entregue.');
+  }
+
+  const team = await json(await fetch(
+    `${appUrl}/api/organizations/${organization.id}/members`,
+    { headers }
+  ));
+  const agent = team.members.find((member) => member.role === 'AGENT' && member.active);
+  if (!agent) throw new Error('Nenhum atendente ativo disponível para testar a remoção.');
+  await json(await fetch(
+    `${appUrl}/api/organizations/${organization.id}/members/${agent.id}`,
+    { method: 'DELETE', headers }
+  ));
+  const teamAfterRemoval = await json(await fetch(
+    `${appUrl}/api/organizations/${organization.id}/members`,
+    { headers }
+  ));
+  if (teamAfterRemoval.members.find((member) => member.id === agent.id)?.active !== false) {
+    throw new Error('O atendente continuou ativo após a remoção.');
+  }
+  await json(await fetch(`${appUrl}/api/organizations/${organization.id}/members`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      name: agent.user.name,
+      email: agent.user.email,
+      role: 'AGENT'
+    })
+  }));
+
   const incomingPhone = `5511988${String(Date.now()).slice(-7)}`;
   const payload = {
     object: 'whatsapp_business_account',
@@ -71,15 +151,35 @@ async function main() {
   if (!received) throw new Error('A mensagem recebida não apareceu na fila.');
 
   await json(await fetch(`${appUrl}/api/organizations/${organization.id}/tickets/${received.ticketId}/assign`, {
-    method: 'POST', headers
+    method: 'POST', headers: authHeaders(agentAuth.token)
   }));
+  const blockedReply = await fetch(`${appUrl}/api/organizations/${organization.id}/messages`, {
+    method: 'POST',
+    headers: authHeaders(otherAgentAuth.token),
+    body: JSON.stringify({
+      channelId: received.channelId,
+      contactId: received.contact.id,
+      body: 'Outro atendente não pode responder'
+    })
+  });
+  if (blockedReply.ok) throw new Error('Outro atendente respondeu um cliente bloqueado.');
+
   const sent = await json(await fetch(`${appUrl}/api/organizations/${organization.id}/messages`, {
+    method: 'POST',
+    headers: authHeaders(agentAuth.token),
+    body: JSON.stringify({
+      channelId: received.channelId,
+      contactId: received.contact.id,
+      body: 'Resposta enviada pelo FilaZap no teste Docker'
+    })
+  }));
+  await json(await fetch(`${appUrl}/api/organizations/${organization.id}/messages`, {
     method: 'POST',
     headers,
     body: JSON.stringify({
       channelId: received.channelId,
       contactId: received.contact.id,
-      body: 'Resposta enviada pelo FilaZap no teste Docker'
+      body: 'Administrador pode responder qualquer atendimento'
     })
   }));
 
@@ -141,13 +241,31 @@ async function main() {
     }
   }
 
+  const queueAfterAssignment = await json(await fetch(
+    `${appUrl}/api/organizations/${organization.id}/tickets`,
+    { headers }
+  ));
+  const assignedTicket = queueAfterAssignment.queue.find((item) => item.ticketId === received.ticketId);
+  if (assignedTicket?.assignedUserName !== agentAuth.user.name) {
+    throw new Error('A fila não informou corretamente o atendente responsável.');
+  }
+
+  await json(await fetch(
+    `${appUrl}/api/organizations/${organization.id}/tickets/${received.ticketId}/finish`,
+    { method: 'POST', headers: authHeaders(agentAuth.token) }
+  ));
+
   console.log('✓ Login da demo');
+  console.log('✓ Chat interno com presença, mensagem privada e aviso para toda a equipe');
+  console.log('✓ Atendente removido pelo administrador e reativado ao final do teste');
   console.log('✓ Webhook assinado recebido e ticket criado');
   console.log('✓ Ticket assumido e resposta enviada ao WhatsApp mock');
+  console.log('✓ Cliente bloqueado ao responsável, com acesso global para administrador');
   console.log(`✓ Mensagem persistida: ${sent.message?.id ? 'sim' : 'não'}`);
   console.log('✓ Imagem, áudio e documento enviados e recebidos pelo mock');
   console.log('✓ Mídias persistidas e acessíveis após recarregar o histórico');
   console.log('✓ Download disponível para cada tipo de mídia');
+  console.log('✓ Responsável identificado na fila e atendimento de teste finalizado');
 }
 
 main().catch((error) => {

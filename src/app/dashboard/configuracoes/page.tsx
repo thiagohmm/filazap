@@ -2,7 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import { KeyRound, MessageCircleMore, Palette, Settings2 } from 'lucide-react';
+import { KeyRound, MessageCircleMore, Palette, Settings2, ShieldCheck } from 'lucide-react';
 import { loadSession, saveSession } from '../../lib/session';
 import type { OrganizationInfo } from '../../lib/session';
 import { useOrgTheme } from '../../lib/useOrgTheme';
@@ -115,7 +115,7 @@ export default function ConfiguracoesPage() {
 
   async function handleRegisterChannel(e: React.FormEvent) {
     e.preventDefault();
-    if (!session || !selectedOrg) return;
+    if (!session || !selectedOrg || !canManage) return;
     setError('');
     setNotice('');
     try {
@@ -146,7 +146,7 @@ export default function ConfiguracoesPage() {
 
   async function handleSaveCredentials(e: React.FormEvent) {
     e.preventDefault();
-    if (!session || !selectedOrg || !selectedChannelId) return;
+    if (!session || !selectedOrg || !selectedChannelId || !canManage) return;
     setError('');
     setNotice('');
     const body: Record<string, string> = {};
@@ -184,7 +184,7 @@ export default function ConfiguracoesPage() {
 
   async function handleSaveAppearance(e: React.FormEvent) {
     e.preventDefault();
-    if (!session || !selectedOrg) return;
+    if (!session || !selectedOrg || !canManage) return;
     setError('');
     setNotice('');
     try {
@@ -226,17 +226,18 @@ export default function ConfiguracoesPage() {
           <div>
           <span className="eyebrow">Administração</span>
           <h1>Configurações</h1>
-          <p>Gerencie os números de WhatsApp e a aparência de {selectedOrg.name}.</p>
+          <p>{canManage ? 'Gerencie' : 'Consulte'} os números de WhatsApp e a aparência de {selectedOrg.name}.</p>
           </div>
           <div className="head-stat"><Settings2 size={20} /><span><strong>{channels.length}</strong> canal(is)</span></div>
         </div>
 
         {notice && <div className="alert alert-success">{notice}</div>}
         {error && <div className="alert alert-error">{error}</div>}
+        {!canManage && <div className="settings-readonly"><ShieldCheck size={17} /><span><strong>Modo somente leitura.</strong> Apenas proprietários e administradores podem alterar configurações.</span></div>}
 
         <div className="settings-grid">
           <div>
-            <div className="card settings-card">
+            {canManage && <div className="card settings-card">
               <div className="card-head">
                 <div className="card-icon"><MessageCircleMore size={20} /></div>
                 <div>
@@ -276,7 +277,7 @@ export default function ConfiguracoesPage() {
                 </div>
                 <button type="submit" className="btn btn-block">Registrar número</button>
               </form>
-            </div>
+            </div>}
 
             <div className="card settings-card" style={{ marginTop: 20 }}>
               <div className="card-head">
@@ -295,7 +296,8 @@ export default function ConfiguracoesPage() {
                     key={opt.value}
                     type="button"
                     className={`theme-option ${theme === opt.value ? 'active' : ''}`}
-                    onClick={() => setTheme(opt.value)}
+                    onClick={() => canManage && setTheme(opt.value)}
+                    disabled={!canManage}
                   >
                     <span className="theme-icon">{opt.icon}</span>
                     {opt.label}
@@ -312,7 +314,8 @@ export default function ConfiguracoesPage() {
                       type="button"
                       className={`swatch ${brandColor.toLowerCase() === color ? 'active' : ''}`}
                       style={{ background: color, color }}
-                      onClick={() => setBrandColor(color)}
+                      onClick={() => canManage && setBrandColor(color)}
+                      disabled={!canManage}
                       aria-label={`Cor ${color}`}
                     />
                   ))}
@@ -322,6 +325,7 @@ export default function ConfiguracoesPage() {
                     type="color"
                     value={brandColor}
                     onChange={(e) => setBrandColor(e.target.value)}
+                    disabled={!canManage}
                   />
                   <span className="hex">{brandColor}</span>
                 </div>
@@ -374,7 +378,7 @@ export default function ConfiguracoesPage() {
                   </div>
                 )}
 
-                {selectedChannel && (
+                {selectedChannel && canManage && (
                   <form onSubmit={handleSaveCredentials}>
                     <div className="field">
                       <label>Access Token</label>
@@ -418,6 +422,9 @@ export default function ConfiguracoesPage() {
                     </div>
                     <button type="submit" className="btn btn-block">Salvar credenciais</button>
                   </form>
+                )}
+                {selectedChannel && !canManage && (
+                  <p className="hint">As credenciais ficam protegidas e não podem ser visualizadas ou alteradas por atendentes.</p>
                 )}
               </>
             )}

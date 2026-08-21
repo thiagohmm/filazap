@@ -14,6 +14,13 @@ export type MemberWithOrganization = OrganizationMember & {
 export interface OrganizationMemberRepository {
   save(member: OrganizationMember): Promise<OrganizationMember>;
   findByOrganizationId(organizationId: string): Promise<OrganizationMember[]>;
+  findById(id: string): Promise<OrganizationMember | null>;
+  deactivateAgentAndReleaseTickets(input: {
+    memberId: string;
+    organizationId: string;
+    userId: string;
+    now: Date;
+  }): Promise<{ removed: boolean; releasedTickets: number }>;
   findByUserAndOrganization(
     userId: string,
     organizationId: string

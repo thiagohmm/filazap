@@ -3,13 +3,15 @@ import { CreateOrganization } from '../use-cases/CreateOrganization';
 import { Authenticate } from '../use-cases/Authenticate';
 import { InviteMember } from '../use-cases/InviteMember';
 import { ListMembers } from '../use-cases/ListMembers';
+import { RemoveMember } from '../use-cases/RemoveMember';
 import { createTestServices } from './fakes';
 import {
   EmailAlreadyRegisteredError,
   SlugAlreadyExistsError,
   InvalidCredentialsError,
   ForbiddenRoleError,
-  MemberNotFoundError
+  MemberNotFoundError,
+  MemberCannotBeRemovedError
 } from '../../domain/errors';
 import { Role } from '../../domain/value-objects/Role';
 
@@ -19,7 +21,8 @@ function build(deps = createTestServices()) {
     createOrganization: new CreateOrganization(deps),
     authenticate: new Authenticate(deps),
     inviteMember: new InviteMember(deps),
-    listMembers: new ListMembers(deps)
+    listMembers: new ListMembers(deps),
+    removeMember: new RemoveMember(deps)
   };
 }
 
@@ -227,4 +230,87 @@ describe('ListMembers', () => {
     });
     return { services, org };
   }
+});
+
+describe('RemoveMember', () => {
+  async function setup() {
+    const services = build();
+    const org = await services.createOrganization.execute({
+      name: 'Empresa A',
+      adminName: 'Ana',
+      adminEmail: 'ana@example.com',
+      adminPassword: 'senha1234'
+    });
+    const agent = await services.inviteMember.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      email: 'agente@example.com',
+      name: 'Agente',
+      role: 'AGENT'
+    });
+    return { services, org, agent };
+  }
+
+  it('proprietário remove um atendente sem apagar seu histórico', async () => {
+    const { services, org, agent } = await setup();
+
+    const output = await services.removeMember.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      memberId: agent.member.id
+    });
+
+    expect(output.member.active).toBe(false);
+    const removed = await services.deps.members.findById(agent.member.id);
+    expect(removed?.active).toBe(false);
+    expect(await services.deps.users.findById(agent.member.user.id)).not.toBeNull();
+  });
+
+  it('administrador remove um atendente', async () => {
+    const { services, org, agent } = await setup();
+    const admin = await services.inviteMember.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      email: 'admin2@example.com',
+      name: 'Admin 2',
+      role: 'ADMIN'
+    });
+
+    await expect(services.removeMember.execute({
+      actorUserId: admin.member.user.id,
+      organizationId: org.organizationId,
+      memberId: agent.member.id
+    })).resolves.toMatchObject({ member: { active: false } });
+  });
+
+  it('atendente não pode remover outro atendente', async () => {
+    const { services, org, agent } = await setup();
+    const otherAgent = await services.inviteMember.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      email: 'outro@example.com',
+      name: 'Outro',
+      role: 'AGENT'
+    });
+
+    await expect(services.removeMember.execute({
+      actorUserId: agent.member.user.id,
+      organizationId: org.organizationId,
+      memberId: otherAgent.member.id
+    })).rejects.toBeInstanceOf(ForbiddenRoleError);
+  });
+
+  it('não permite remover proprietário ou administrador', async () => {
+    const { services, org } = await setup();
+    const owner = await services.deps.members.findByUserAndOrganization(
+      org.user.id,
+      org.organizationId
+    );
+
+    await expect(services.removeMember.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      memberId: owner!.id
+    })).rejects.toBeInstanceOf(MemberCannotBeRemovedError);
+  });
 });
