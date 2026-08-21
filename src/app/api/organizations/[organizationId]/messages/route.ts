@@ -112,6 +112,14 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
+    if (
+      media &&
+      (!media.storedPath.startsWith(`media/${organizationId}/`) ||
+        media.storedPath.includes('..') ||
+        media.storedPath.includes('\\'))
+    ) {
+      return NextResponse.json({ error: 'Caminho de mídia inválido.' }, { status: 400 });
+    }
 
     const output = await useCases.sendMessage.execute({
       actorUserId: session.userId,

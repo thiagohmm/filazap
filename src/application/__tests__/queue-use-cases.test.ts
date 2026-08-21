@@ -51,6 +51,9 @@ function build() {
     messages: wa.messages,
     ticketEvents: wa.ticketEvents,
     parser: wa.parser,
+    gateway: wa.gateway,
+    mediaStorage: wa.mediaStorage,
+    cipher: wa.cipher,
     clock: wa.clock,
     logger: base.logger,
     idGenerator: wa.idGenerator
@@ -154,7 +157,7 @@ function setInbound(
     businessAccountId: 'waba-1',
     phoneNumberId: '123456789',
     messages: [
-      { whatsappMessageId: id, from, timestamp, type: 'text', body }
+      { whatsappMessageId: id, from, timestamp, type: 'text', body, mediaId: null }
     ],
     statuses: []
   } as ParsedWebhook;

@@ -1,8 +1,25 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCheck, Clock3, FileText, Image, MessageSquarePlus, Paperclip, RotateCcw, Search, Send, UserCheck, X } from 'lucide-react';
+import { createClient } from '@supabase/supabase-js';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  CheckCheck,
+  Clock3,
+  Download,
+  FileText,
+  Image as ImageIcon,
+  Mic,
+  MessageSquarePlus,
+  Paperclip,
+  RotateCcw,
+  Search,
+  Send,
+  Square,
+  Trash2,
+  UserCheck,
+  X
+} from 'lucide-react';
 import { loadSession } from '../../lib/session';
 import type { OrganizationInfo } from '../../lib/session';
 import { useOrgTheme } from '../../lib/useOrgTheme';
@@ -113,6 +130,12 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
 }
 
+function formatRecordingTime(seconds: number): string {
+  const minutes = Math.floor(seconds / 60).toString().padStart(2, '0');
+  const remaining = (seconds % 60).toString().padStart(2, '0');
+  return `${minutes}:${remaining}`;
+}
+
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString('pt-BR');
 }
@@ -129,6 +152,13 @@ export default function AtendimentoPage() {
   const [draft, setDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [recordedBlob, setRecordedBlob] = useState<Blob | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const recordedChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const discardRecordingRef = useRef(false);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -302,7 +332,6 @@ export default function AtendimentoPage() {
     const onMove = (e: MouseEvent) => {
       if (!resizeDirRef.current || !bodyRef.current) return;
       const viewport = window.innerWidth;
-      const centerMin = 340;
       const minCol = 240;
       const maxCol = 480;
       if (resizeDirRef.current === 'left') {
@@ -356,9 +385,10 @@ export default function AtendimentoPage() {
   };
 
   const mediaUrl = useCallback(
-    (mediaPath: string | null) => {
+    (mediaPath: string | null, download = false) => {
       if (!selectedOrg || !mediaPath) return '';
-      return `/api/organizations/${selectedOrg.id}/media/${mediaPath}`;
+      const base = `/api/organizations/${selectedOrg.id}/media/${mediaPath}`;
+      return download ? `${base}?download=1` : base;
     },
     [selectedOrg]
   );
@@ -375,6 +405,123 @@ export default function AtendimentoPage() {
 
   function clearPendingFile() {
     setPendingFile(null);
+    setRecordedBlob(null);
+  }
+
+  const mimeTypes = [
+    'audio/webm',
+    'audio/webm;codecs=opus',
+    'audio/ogg',
+    'audio/ogg;codecs=opus',
+    'audio/mpeg',
+    'audio/mp4',
+    'audio/wav',
+    'audio/x-wav'
+  ];
+
+  function pickMime(): string {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported) {
+      return mimeTypes.find((m) => MediaRecorder.isTypeSupported(m)) ?? '';
+    }
+    return '';
+  }
+
+  async function startRecording() {
+    if (
+      typeof window === 'undefined' ||
+      typeof navigator === 'undefined' ||
+      typeof MediaRecorder === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia
+    ) {
+      setError(
+        window?.isSecureContext === false
+          ? 'Gravação de áudio requer contexto seguro: acesse via https ou localhost.'
+          : 'Seu navegador não suporta gravação de áudio.'
+      );
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const RecorderClass = (window as unknown as { MediaRecorder: typeof MediaRecorder }).MediaRecorder;
+      const mimeType = pickMime();
+      const recorder = mimeType
+        ? new RecorderClass(stream, { mimeType })
+        : new RecorderClass(stream);
+      recorder.onerror = () => {
+        setError('Falha na gravação de áudio. Verifique o microfone.');
+        stopRecording();
+      };
+
+      recorder.ondataavailable = (e: BlobEvent) => {
+        if (e.data && e.data.size > 0) recordedChunksRef.current.push(e.data);
+      };
+      recorder.onstop = () => {
+        if (discardRecordingRef.current) {
+          discardRecordingRef.current = false;
+          recordedChunksRef.current = [];
+          setRecordingSeconds(0);
+          return;
+        }
+        const blob = new Blob(recordedChunksRef.current, {
+          type: (mimeType || 'audio/webm').split(';')[0]
+        });
+        setRecordedBlob(blob);
+        setRecordingSeconds(0);
+        recordedChunksRef.current = [];
+      };
+
+      mediaRecorderRef.current = recorder;
+      discardRecordingRef.current = false;
+      recordedChunksRef.current = [];
+      setRecordingSeconds(0);
+      setIsRecording(true);
+      setError('');
+      recorder.start(1000);
+      recordingTimerRef.current = setInterval(
+        () => setRecordingSeconds((s) => s + 1),
+        1000
+      );
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'NotAllowedError') {
+        setError('Permissão de microfone negada. Libere o acesso nas configurações do navegador.');
+      } else {
+        setError('Não foi possível acessar o microfone.');
+      }
+    }
+  }
+
+  const recordedUrl = useMemo(
+    () => (recordedBlob ? URL.createObjectURL(recordedBlob) : null),
+    [recordedBlob]
+  );
+
+  useEffect(() => {
+    return () => {
+      if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    };
+  }, [recordedUrl]);
+
+  function stopRecording() {
+    const recorder = mediaRecorderRef.current;
+    if (recordingTimerRef.current) {
+      clearInterval(recordingTimerRef.current);
+      recordingTimerRef.current = null;
+    }
+    if (recorder && recorder.state !== 'inactive') {
+      recorder.stop();
+    }
+    if (mediaRecorderRef.current?.stream) {
+      mediaRecorderRef.current.stream.getTracks().forEach((t) => t.stop());
+    }
+    mediaRecorderRef.current = null;
+    setIsRecording(false);
+  }
+
+  function cancelRecording() {
+    discardRecordingRef.current = true;
+    stopRecording();
+    setRecordedBlob(null);
+    setRecordingSeconds(0);
   }
 
   async function refreshMessages(ticketId: string) {
@@ -390,7 +537,7 @@ export default function AtendimentoPage() {
     e.preventDefault();
     const hasFile = !!pendingFile;
     if (!selectedTicketId) return;
-    if (!hasFile && !draft.trim()) return;
+    if (!hasFile && !recordedBlob && !draft.trim()) return;
     const selected = queue.find((q) => q.ticketId === selectedTicketId);
     if (!selected) return;
     if (selected.status === 'FINISHED') {
@@ -400,21 +547,75 @@ export default function AtendimentoPage() {
     setLoading(true);
     try {
       let out: unknown = null;
-      if (hasFile) {
-        const fd = new FormData();
-        fd.append('channelId', selected.channelId);
-        fd.append('contactId', selected.contact.id);
-        fd.append('body', draft);
-        fd.append('file', pendingFile!);
-        const res = await fetch(
-          `/api/organizations/${selectedOrg!.id}/messages`,
+      // Monta o File de forma síncrona (setPendingFile é assíncrono e ainda não teria efeito aqui).
+      let fileToSend: File | null = pendingFile;
+      if (!fileToSend && recordedBlob) {
+        const ext = recordedBlob.type === 'audio/mp4'
+          ? 'm4a'
+          : recordedBlob.type.split('/')[1] || 'webm';
+        fileToSend = new File(
+          [recordedBlob],
+          `audio_${Date.now()}.${ext ?? 'webm'}`,
+          { type: recordedBlob.type || 'audio/webm' }
+        );
+        setRecordedBlob(null);
+      }
+      if (fileToSend) {
+        const authorization = await fetch(
+          `/api/organizations/${selectedOrg!.id}/media/upload-url`,
           {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${session!.token}`
+            },
+            body: JSON.stringify({
+              filename: fileToSend.name,
+              mimeType: fileToSend.type,
+              size: fileToSend.size
+            })
+          }
+        );
+        const upload = await authorization.json();
+        if (!authorization.ok) throw new Error(upload.error ?? 'Falha ao autorizar anexo.');
+
+        if (upload.mode === 'supabase') {
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+          const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+          if (!supabaseUrl || !supabaseKey) throw new Error('Supabase não configurado no navegador.');
+          const supabase = createClient(supabaseUrl, supabaseKey, {
+            auth: { persistSession: false, autoRefreshToken: false }
+          });
+          const { error: uploadError } = await supabase.storage
+            .from(process.env.NEXT_PUBLIC_SUPABASE_STORAGE_BUCKET ?? 'filazap-media')
+            .uploadToSignedUrl(upload.storedPath, upload.token, fileToSend, {
+              contentType: fileToSend.type
+            });
+          if (uploadError) throw new Error(`Falha no upload: ${uploadError.message}`);
+          out = await api('/messages', 'POST', {
+            channelId: selected.channelId,
+            contactId: selected.contact.id,
+            body: draft,
+            media: {
+              filename: fileToSend.name,
+              mimeType: fileToSend.type,
+              storedPath: upload.storedPath,
+              caption: draft || null
+            }
+          });
+        } else {
+          const fd = new FormData();
+          fd.append('channelId', selected.channelId);
+          fd.append('contactId', selected.contact.id);
+          fd.append('body', draft);
+          fd.append('file', fileToSend);
+          const res = await fetch(`/api/organizations/${selectedOrg!.id}/messages`, {
             method: 'POST',
             headers: { Authorization: `Bearer ${session!.token}` },
             body: fd
-          }
-        );
-        out = await res.json();
+          });
+          out = await res.json();
+        }
       } else {
         out = await api('/messages', 'POST', {
           channelId: selected.channelId,
@@ -428,6 +629,8 @@ export default function AtendimentoPage() {
         await refreshMessages(selectedTicketId);
         loadAll();
       }
+    } catch (sendError) {
+      setError(sendError instanceof Error ? sendError.message : 'Falha ao enviar mensagem.');
     } finally {
       setLoading(false);
     }
@@ -616,24 +819,37 @@ export default function AtendimentoPage() {
                 {messages.length === 0 && <div className="queue-empty">Nenhuma mensagem.</div>}
                 {messages.map((m) => (
                   <div key={m.id} className={`bubble ${m.direction === 'OUTBOUND' ? 'out' : 'in'}`}>
-                    {m.mediaPath && (
-                      <a
-                        className="attach-media"
-                        href={mediaUrl(m.mediaPath)}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {m.type === 'IMAGE' ? (
-                          <img src={mediaUrl(m.mediaPath)} alt={m.body ?? 'imagem'} />
-                        ) : (
-                          <span className="attach-doc">
-                            <FileText size={18} />
-                            <span>{m.body || 'Arquivo'}</span>
-                          </span>
-                        )}
-                      </a>
+                    {m.mediaPath && m.type === 'IMAGE' && (
+                      <div className="media-card media-card-image">
+                        <a className="media-preview" href={mediaUrl(m.mediaPath)} target="_blank" rel="noopener noreferrer">
+                          <img src={mediaUrl(m.mediaPath)} alt={m.body ?? 'Imagem enviada'} />
+                        </a>
+                        <a className="media-download" href={mediaUrl(m.mediaPath, true)} download title="Baixar imagem" aria-label="Baixar imagem">
+                          <Download size={16} />
+                        </a>
+                      </div>
                     )}
-                    {m.body && <span>{m.body}</span>}
+                    {m.mediaPath && m.type === 'AUDIO' && (
+                      <div className="media-card media-card-audio">
+                        <span className="media-kind"><Mic size={16} /></span>
+                        <audio controls preload="metadata" src={mediaUrl(m.mediaPath)} />
+                        <a className="media-download" href={mediaUrl(m.mediaPath, true)} download title="Baixar áudio" aria-label="Baixar áudio">
+                          <Download size={16} />
+                        </a>
+                      </div>
+                    )}
+                    {m.mediaPath && m.type !== 'IMAGE' && m.type !== 'AUDIO' && (
+                      <div className="media-card media-card-document">
+                        <a className="document-preview" href={mediaUrl(m.mediaPath)} target="_blank" rel="noopener noreferrer">
+                          <span className="document-icon"><FileText size={30} /></span>
+                          <span className="document-copy"><strong>{m.body || 'Documento'}</strong><small>Abrir documento</small></span>
+                        </a>
+                        <a className="media-download" href={mediaUrl(m.mediaPath, true)} download title="Baixar documento" aria-label="Baixar documento">
+                          <Download size={16} />
+                        </a>
+                      </div>
+                    )}
+                    {m.body && m.type !== 'DOCUMENT' && <span className="media-caption">{m.body}</span>}
                     <span className="bubble-time">{formatTime(m.createdAt)}</span>
                   </div>
                 ))}
@@ -645,12 +861,14 @@ export default function AtendimentoPage() {
                     Atendimento finalizado — mensagens desativadas.
                   </div>
                 )}
-                <input
-                  value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Digite a resposta..."
-                  disabled={loading || isFinished}
-                />
+                {!isRecording && (
+                  <input
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    placeholder="Digite a resposta..."
+                    disabled={loading || isFinished}
+                  />
+                )}
                 <input
                   ref={fileInputRef}
                   type="file"
@@ -658,22 +876,24 @@ export default function AtendimentoPage() {
                   onChange={handlePickFile}
                   style={{ display: 'none' }}
                 />
-                <button
-                  type="button"
-                  className="btn btn-icon"
-                  title={'Anexar foto ou documento'}
-                  onClick={pickAttachFile}
-                  disabled={loading || isFinished}
-                >
-                  <Paperclip size={17} />
-                </button>
+                {!isRecording && (
+                  <button
+                    type="button"
+                    className="btn btn-icon"
+                    title={'Anexar foto ou documento'}
+                    onClick={pickAttachFile}
+                    disabled={loading || isFinished || !!recordedBlob}
+                  >
+                    <Paperclip size={17} />
+                  </button>
+                )}
                 {pendingFile && (
                   <div className="attach-preview">
                     {pendingFile.type.startsWith('image/') && (
                       <img src={URL.createObjectURL(pendingFile)} alt="anexo" />
                     )}
                     <span className="attach-name">
-                      {pendingFile.type.startsWith('image/') ? <Image size={14} /> : <FileText size={14} />}
+                      {pendingFile.type.startsWith('image/') ? <ImageIcon size={14} /> : <FileText size={14} />}
                       {pendingFile.name}
                     </span>
                     <button
@@ -686,7 +906,57 @@ export default function AtendimentoPage() {
                     </button>
                   </div>
                 )}
-                <button className="btn send-button" disabled={loading || isFinished}><Send size={17} /><span>Enviar</span></button>
+                {!isFinished && (
+                  <>
+                    {isRecording ? (
+                      <div className="voice-recorder" title="Gravando áudio">
+                        <button type="button" className="voice-action voice-cancel" title="Cancelar gravação" onClick={cancelRecording}>
+                          <Trash2 size={17} />
+                        </button>
+                        <span className="record-dot" />
+                        <span className="record-label">Gravando</span>
+                        <span className="record-time">{formatRecordingTime(recordingSeconds)}</span>
+                        <button
+                          type="button"
+                          className="voice-action voice-stop"
+                          title="Concluir gravação"
+                          onClick={stopRecording}
+                        >
+                          <Square size={14} fill="currentColor" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        {recordedBlob && (
+                          <div className="voice-preview">
+                            <span className="voice-preview-icon"><Mic size={16} /></span>
+                            <div className="voice-preview-copy">
+                              <strong>Áudio pronto</strong>
+                              <small>Ouça antes de enviar</small>
+                            </div>
+                            {recordedUrl && (
+                              <audio controls preload="metadata" src={recordedUrl} />
+                            )}
+                            <button
+                              type="button"
+                              className="voice-action voice-cancel"
+                              title="Descartar áudio"
+                              onClick={cancelRecording}
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        )}
+                        {!recordedBlob && (
+                          <button type="button" className="btn btn-icon" title="Gravar áudio" onClick={startRecording} disabled={loading || !!pendingFile}>
+                            <Mic size={17} />
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </>
+                )}
+                <button className="btn send-button" disabled={loading || isFinished || isRecording}><Send size={17} /><span>Enviar</span></button>
               </form>
 
               <form onSubmit={handleAddNote} className="send-form note-form">

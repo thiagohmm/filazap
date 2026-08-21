@@ -1,6 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { createHmac } from 'crypto';
 import { MetaWhatsAppWebhookParser } from '../MetaWhatsAppWebhookParser';
+import { MetaWhatsAppGateway } from '../MetaWhatsAppGateway';
 import { MetaWebhookSignatureVerifier } from '../MetaWebhookSignatureVerifier';
 
 describe('MetaWhatsAppWebhookParser', () => {
@@ -67,7 +68,10 @@ describe('MetaWhatsAppWebhookParser', () => {
               value: {
                 metadata: { phone_number_id: '123456789' },
                 messages: [
-                  { from: '1555', id: 'wamid.img', timestamp: '1', type: 'image' }
+                  {
+                    from: '1555', id: 'wamid.img', timestamp: '1', type: 'image',
+                    image: { id: 'media-image', caption: 'Comprovante' }
+                  }
                 ]
               },
               field: 'messages'
@@ -77,7 +81,19 @@ describe('MetaWhatsAppWebhookParser', () => {
       ]
     });
     expect(parsed.messages[0].type).toBe('image');
-    expect(parsed.messages[0].body).toBeNull();
+    expect(parsed.messages[0].body).toBe('Comprovante');
+    expect(parsed.messages[0].mediaId).toBe('media-image');
+  });
+
+  it('extrai IDs dos campos reais de áudio e documento', () => {
+    const parsed = parser.parse({
+      entry: [{ changes: [{ value: { metadata: { phone_number_id: '123' }, messages: [
+        { from: '1555', id: 'a1', timestamp: '1', type: 'audio', audio: { id: 'media-audio' } },
+        { from: '1555', id: 'd1', timestamp: '2', type: 'document', document: { id: 'media-document', filename: 'nota.pdf' } }
+      ] } }] }]
+    });
+    expect(parsed.messages[0]).toMatchObject({ mediaId: 'media-audio', body: null });
+    expect(parsed.messages[1]).toMatchObject({ mediaId: 'media-document', body: 'nota.pdf' });
   });
 
   it('ignora payload vazio', () => {
@@ -104,5 +120,116 @@ describe('MetaWebhookSignatureVerifier', () => {
 
   it('rejeita cabeçalho ausente', () => {
     expect(verifier.verify('{}', '')).toBe(false);
+  });
+});
+
+describe('MetaWhatsAppGateway.sendMedia', () => {
+  function fakeResponse() {
+    return {
+      json: async () => ({ messages: [{ id: 'wamid.TEST' }] }),
+      text: async () => '{}',
+      ok: true,
+      status: 200
+    } as unknown as Response;
+  }
+
+  it('envia document quando o mimeType não é imagem ou áudio', async () => {
+    let requestBody: string = '';
+    const fetchMock = vi.fn(async (_url: string, opts: { body: string }) => {
+      requestBody = opts.body;
+      return fakeResponse();
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const gateway = new MetaWhatsAppGateway({ baseUrl: () => 'http://api.test/123' });
+
+    await gateway.sendMedia({
+      channel: { phoneNumberId: '123', accessToken: 'token' },
+      to: '5511999999999',
+      fileRef: { fileId: 'FILE_ID', mimeType: 'application/pdf', filename: 'relatorio.pdf' },
+      caption: 'Meu relatório',
+      mediaType: 'document'
+    });
+
+    const body = JSON.parse(requestBody) as {
+      type: string;
+      document: { id: string; caption: string };
+    };
+    expect(body.type).toBe('document');
+    expect(body.document).toEqual({ id: 'FILE_ID', caption: 'Meu relatório' });
+
+    vi.unstubAllGlobals();
+  });
+
+  it('envia audio (sem caption) a partir de um fileId', async () => {
+    let requestBody: string = '';
+    const fetchMock = vi.fn(async (_url: string, opts: { body: string }) => {
+      requestBody = opts.body;
+      return fakeResponse();
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const gateway = new MetaWhatsAppGateway({ baseUrl: () => 'http://api.test/123' });
+
+    await gateway.sendMedia({
+      channel: { phoneNumberId: '123', accessToken: 'token' },
+      to: '5511999999999',
+      fileRef: { fileId: 'AUDIO_ID', mimeType: 'audio/ogg', filename: 'mensagem.ogg' },
+      caption: null,
+      mediaType: 'audio'
+    });
+
+    const body = JSON.parse(requestBody) as { type: string; audio: { id: string } };
+    expect(body.type).toBe('audio');
+    expect(body.audio).toEqual({ id: 'AUDIO_ID' });
+
+    vi.unstubAllGlobals();
+  });
+
+  it('baixa mídia recebida (GET /{mediaId} + download do binário)', async () => {
+    const calls: Array<{ url: string; auth: string | null }> = [];
+    const fetchMock = vi.fn(async (input: string, init?: RequestInit) => {
+      const auth = init?.headers
+        ? String((init.headers as Record<string, string>).Authorization ?? '')
+        : null;
+      calls.push({ url: String(input), auth: auth ?? null });
+
+      if (/\/media\d+$/.test(String(input))) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            url: 'http://api.test/bin/download',
+            mime_type: 'audio/ogg',
+            file_name: 'voz.ogg'
+          }),
+          text: async () => ''
+        };
+      }
+
+      return {
+        ok: true,
+        status: 200,
+        arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+        headers: new Headers({ 'content-type': 'audio/ogg' })
+      };
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const gateway = new MetaWhatsAppGateway({ baseUrl: () => 'http://api.test' });
+
+    const result = await gateway.fetchMedia({
+      channel: { phoneNumberId: '123', accessToken: 'token' },
+      mediaId: 'media123'
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[0].url).toBe('http://api.test/media123');
+    expect(calls[0].auth).toBe('Bearer token');
+    expect(result.data.equals(Buffer.from([1, 2, 3]))).toBe(true);
+    expect(result.mimeType).toBe('audio/ogg');
+    expect(result.filename).toBe('voz.ogg');
+
+    vi.unstubAllGlobals();
   });
 });

@@ -38,11 +38,26 @@ export type SendMediaCommand = {
     filename: string;
   };
   caption?: string | null;
-  isImage: boolean;
+  mediaType: 'image' | 'document' | 'audio';
+};
+
+export type FetchMediaCommand = {
+  channel: {
+    phoneNumberId: string;
+    accessToken: string;
+  };
+  mediaId: string;
+};
+
+export type FetchMediaResult = {
+  data: Buffer;
+  mimeType: string;
+  filename: string | null;
 };
 
 export interface WhatsAppGateway {
   sendText(command: SendMessageCommand): Promise<SendMessageResult>;
   uploadMedia(command: UploadMediaCommand): Promise<UploadMediaResult>;
   sendMedia(command: SendMediaCommand): Promise<SendMessageResult>;
+  fetchMedia(command: FetchMediaCommand): Promise<FetchMediaResult>;
 }

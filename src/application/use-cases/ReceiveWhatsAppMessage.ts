@@ -17,6 +17,9 @@ import type { TicketRepository } from '../ports/TicketRepository';
 import type { WhatsAppChannelRepository } from '../ports/WhatsAppChannelRepository';
 import type { WebhookEventRepository } from '../ports/WebhookEventRepository';
 import type { WhatsAppWebhookParser } from '../ports/WhatsAppWebhookParser';
+import type { CredentialCipher } from '../ports/CredentialCipher';
+import type { MediaStorage } from '../ports/MediaStorage';
+import type { WhatsAppGateway } from '../ports/WhatsAppGateway';
 import type {
   ReceiveWhatsAppMessageInput,
   ReceiveWhatsAppMessageOutput
@@ -32,6 +35,9 @@ export class ReceiveWhatsAppMessage {
       messages: MessageRepository;
       ticketEvents: TicketEventRepository;
       parser: WhatsAppWebhookParser;
+      gateway: WhatsAppGateway;
+      mediaStorage: MediaStorage;
+      cipher: CredentialCipher;
       clock: Clock;
       logger: AuditLogger;
       idGenerator: () => string;
@@ -99,7 +105,14 @@ export class ReceiveWhatsAppMessage {
 
   private async handleInbound(
     parsed: Awaited<ReturnType<WhatsAppWebhookParser['parse']>>,
-    message: { whatsappMessageId: string; from: string; timestamp: string; type: string; body: string | null }
+    message: {
+      whatsappMessageId: string;
+      from: string;
+      timestamp: string;
+      type: string;
+      body: string | null;
+      mediaId: string | null;
+    }
   ): Promise<void> {
     const messageTimestamp = new Date(Number(message.timestamp) * 1000);
 
@@ -200,6 +213,21 @@ export class ReceiveWhatsAppMessage {
     }
     await this.deps.tickets.save(ticket);
 
+    let type = message.type;
+    let mediaPath: string | null = null;
+    if (message.mediaId) {
+      mediaPath = await this.downloadMedia(channel, message.mediaId).catch((error) => {
+        this.deps.logger.log('error', 'webhook.media_download_failed', {
+          whatsappMessageId: message.whatsappMessageId,
+          error: error instanceof Error ? error.message : 'unknown'
+        });
+        return null;
+      });
+      if (mediaPath) {
+        type = this.mapMediaTypeName(message.type);
+      }
+    }
+
     const record = Message.create({
       id: this.deps.idGenerator(),
       organizationId: channel.organizationId,
@@ -207,11 +235,51 @@ export class ReceiveWhatsAppMessage {
       contactId: contact.id,
       whatsappMessageId: message.whatsappMessageId,
       direction: MessageDirection.INBOUND,
-      type: message.type,
+      type,
       body: message.body,
+      mediaPath,
       providerTimestamp: messageTimestamp,
       createdAt: messageTimestamp
     });
     await this.deps.messages.save(record);
+  }
+
+  /** Converte o tipo do webhook da Meta no tipo canônico persistido (ex: image -> IMAGE). */
+  private mapMediaTypeName(providerType: string): string {
+    const map: Record<string, string> = {
+      image: 'IMAGE',
+      audio: 'AUDIO',
+      video: 'VIDEO',
+      document: 'DOCUMENT',
+      text: 'TEXT'
+    };
+    return map[providerType] ?? 'DOCUMENT';
+  }
+
+  private async downloadMedia(
+    channel: NonNullable<Awaited<ReturnType<WhatsAppChannelRepository['findByPhoneNumberId']>>>,
+    mediaId: string
+  ): Promise<string | null> {
+    if (!channel.accessTokenEncrypted) {
+      this.deps.logger.log('warn', 'webhook.media_download_skipped', {
+        reason: 'canal sem access token',
+        whatsappMessageId: mediaId
+      });
+      return null;
+    }
+
+    const accessToken = this.deps.cipher.decrypt(channel.accessTokenEncrypted);
+    const media = await this.deps.gateway.fetchMedia({
+      channel: { phoneNumberId: channel.phoneNumberId, accessToken },
+      mediaId
+    });
+
+    const stored = await this.deps.mediaStorage.store({
+      orgId: channel.organizationId,
+      filename: media.filename ?? mediaId,
+      mimeType: media.mimeType,
+      data: media.data
+    });
+    return stored.storedPath;
   }
 }

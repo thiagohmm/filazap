@@ -16,6 +16,11 @@ Copie `.env.example` para `.env` e preencha os valores. Principais variáveis:
 | `PORT` | Porta do servidor Next. | `3000` |
 | `DATABASE_URL` | URI do PostgreSQL. | `postgresql://filazap:filazap@localhost:5432/filazap` |
 | `TEST_DATABASE_URL` | Banco usado pelos testes. | `postgresql://...:5433/filazap_test` |
+| `MEDIA_STORAGE_DRIVER` | `supabase` na Vercel; `local` no Docker mock. | `local` |
+| `NEXT_PUBLIC_SUPABASE_URL` | URL pública do projeto Supabase. | — |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública usada somente com uploads assinados. | — |
+| `SUPABASE_SERVICE_ROLE_KEY` | Chave privada usada apenas no servidor. | — |
+| `SUPABASE_STORAGE_BUCKET` | Bucket privado das mídias. | `filazap-media` |
 | `JWT_SECRET` | Secret do JWT (HS256). **Gerar valor forte.** | `openssl rand -base64 32` |
 | `SEED_ADMIN_*` / `SEED_ORG_*` | Bootstrap do admin e organização inicial. | — |
 | `WHATSAPP_API_URL` | Base da Cloud API (use o mock em dev). | `http://localhost:4000/graph` |

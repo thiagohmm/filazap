@@ -59,9 +59,13 @@ services:
       NODE_ENV: production
       DATABASE_URL: postgresql://filazap:filazap@postgres:5432/filazap
       WHATSAPP_API_URL: http://whatsapp-mock:4000/graph
+      MEDIA_STORAGE_DRIVER: local
       SEED_DEMO_DATA: "true"
     ports:
       - "127.0.0.1:3000:3000"
+    volumes:
+      # Mídia (imagens, áudios, documentos) persiste entre rebuilds do container
+      - filazap_media:/app/storage
     depends_on:
       postgres:
         condition: service_healthy
@@ -77,3 +81,4 @@ services:
 
 volumes:
   filazap_pgdata:
+  filazap_media:

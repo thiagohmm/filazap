@@ -58,6 +58,9 @@ function build() {
     messages: wa.messages,
     ticketEvents: wa.ticketEvents,
     parser: wa.parser,
+    gateway: wa.gateway,
+    mediaStorage: wa.mediaStorage,
+    cipher: wa.cipher,
     clock: wa.clock,
     logger: base.logger,
     idGenerator: wa.idGenerator
@@ -130,6 +133,7 @@ function setInbound(
     from: string;
     timestamp: string;
     body?: string;
+    mediaId?: string;
   }>,
   statuses: Array<{ id: string; status: string }> = []
 ) {
@@ -141,7 +145,8 @@ function setInbound(
       from: m.from,
       timestamp: m.timestamp,
       type: 'text',
-      body: m.body ?? null
+      body: m.body ?? null,
+      mediaId: m.mediaId ?? null
     })),
     statuses: statuses.map((s) => ({
       whatsappMessageId: s.id,
@@ -359,6 +364,49 @@ describe('ReceiveWhatsAppMessage', () => {
     expect(out.statusesCount).toBe(2);
     const msg = await services.wa.messages.findByWhatsappMessageId('wamid.1');
     expect(msg!.providerStatus).toBe('read');
+  });
+
+  it('baixa e persiste mídia recebida (mediaId no webhook)', async () => {
+    const { services, org, channel } = await setupWithChannel();
+    await services.updateChannelCredentials.execute({
+      actorUserId: org.user.id,
+      organizationId: org.organizationId,
+      channelId: channel.id,
+      accessToken: 'access-token-123',
+      appSecret: 'app-secret-123',
+      webhookVerifyToken: 'verify-token'
+    });
+
+    services.wa.parser.result = {
+      businessAccountId: 'waba-1',
+      phoneNumberId: '123456789',
+      messages: [
+        {
+          whatsappMessageId: 'wamid.media1',
+          from: '+5511999990001',
+          timestamp: '1700000001',
+          type: 'audio',
+          body: null,
+          mediaId: 'media-abc'
+        }
+      ],
+      statuses: []
+    } as ParsedWebhook;
+
+    const out = await services.receiveWhatsAppMessage.execute({
+      payload: { object: 'x' }
+    });
+
+    expect(out.messagesCount).toBe(1);
+    expect(services.wa.gateway.fetchMediaCalls).toHaveLength(1);
+    expect(services.wa.gateway.fetchMediaCalls[0].command.mediaId).toBe('media-abc');
+    expect(
+      services.wa.gateway.fetchMediaCalls[0].command.channel.accessToken
+    ).toBe('access-token-123');
+
+    const msg = await services.wa.messages.findByWhatsappMessageId('wamid.media1');
+    expect(msg!.type).toBe('AUDIO');
+    expect(msg!.mediaPath).toMatch(/^media\/[^/]+\/.+/);
   });
 });
 

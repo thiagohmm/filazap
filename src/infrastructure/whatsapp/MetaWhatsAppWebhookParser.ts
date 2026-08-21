@@ -26,6 +26,10 @@ function extractBody(message: Record<string, unknown>): string | null {
     const text = message.text as Record<string, unknown> | undefined;
     return typeof text?.body === 'string' ? text.body : null;
   }
+  const type = typeof message.type === 'string' ? message.type : '';
+  const media = message[type] as Record<string, unknown> | undefined;
+  if (typeof media?.caption === 'string') return media.caption;
+  if (type === 'document' && typeof media?.filename === 'string') return media.filename;
   return null;
 }
 
@@ -52,12 +56,20 @@ export class MetaWhatsAppWebhookParser implements WhatsAppWebhookParser {
       const rawMessages = Array.isArray(value.messages) ? value.messages : [];
       for (const raw of rawMessages) {
         const message = raw as Record<string, unknown>;
+        let mediaId: string | null = null;
+        const messageType = typeof message.type === 'string' ? message.type : '';
+        const media = message[messageType] as Record<string, unknown> | undefined;
+        if (media && typeof media.id === 'string') {
+          mediaId = media.id;
+        }
+
         messages.push({
           whatsappMessageId: String(message.id ?? ''),
           from: String(message.from ?? ''),
           timestamp: String(message.timestamp ?? '0'),
           type: String(message.type ?? 'text'),
-          body: extractBody(message)
+          body: extractBody(message),
+          mediaId
         });
       }
 

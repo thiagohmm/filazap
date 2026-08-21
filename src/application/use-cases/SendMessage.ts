@@ -63,6 +63,10 @@ export class SendMessage {
 
     const now = this.deps.clock.now();
 
+    const isImage = input.media?.mimeType?.startsWith('image/') ?? false;
+    const isAudio = input.media?.mimeType?.startsWith('audio/') ?? false;
+    const mediaType = isImage ? 'image' : isAudio ? 'audio' : 'document';
+
     if (ticket.status === TicketStatus.WAITING || ticket.status === TicketStatus.RETURNING) {
       const result = await this.deps.tickets.assignTicket(
         ticket.id,
@@ -115,7 +119,6 @@ export class SendMessage {
     const accessToken = this.deps.cipher.decrypt(channel.accessTokenEncrypted);
 
     let result: SendMessageResult;
-    const isImage = input.media?.mimeType?.startsWith('image/') ?? false;
 
     if (input.media) {
       const fileData = await this.deps.mediaStorage.read(input.media.storedPath);
@@ -135,7 +138,7 @@ export class SendMessage {
           filename: input.media.filename
         },
         caption: input.media.caption ?? null,
-        isImage
+        mediaType
       });
     } else {
       result = await this.deps.gateway.sendText({
@@ -154,7 +157,9 @@ export class SendMessage {
       whatsappMessageId: result.providerMessageId,
       direction: MessageDirection.OUTBOUND,
       type: input.media
-        ? isImage
+        ? isAudio
+          ? 'AUDIO'
+          : isImage
           ? 'IMAGE'
           : 'DOCUMENT'
         : 'TEXT',

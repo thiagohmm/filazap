@@ -38,6 +38,8 @@ import type { TicketEventRepository } from '../../application/ports/TicketEventR
 import type { WebhookEventRepository } from '../../application/ports/WebhookEventRepository';
 import { TicketStatus } from '../../domain/value-objects/TicketStatus';
 import type {
+  FetchMediaCommand,
+  FetchMediaResult,
   SendMessageCommand,
   SendMessageResult,
   UploadMediaCommand,
@@ -695,6 +697,17 @@ export class FakeWhatsAppGateway implements WhatsAppGateway {
     const result = { providerMessageId: `wamid.MOCK.MEDIA.${this.mediaCalls.length + 1}` };
     this.mediaCalls.push({ send: command, result });
     return result;
+  }
+
+  fetchMediaCalls: Array<{ command: FetchMediaCommand }> = [];
+
+  async fetchMedia(command: FetchMediaCommand): Promise<FetchMediaResult> {
+    this.fetchMediaCalls.push({ command });
+    return {
+      data: Buffer.from('conteudo-falso-da-midia'),
+      mimeType: 'image/png',
+      filename: null
+    };
   }
 }
 

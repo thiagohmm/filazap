@@ -25,12 +25,62 @@ function sendJson(res, status, body) {
 
 const messagesRe = /^\/graph\/[^/]+\/messages$/;
 const mediaRe = /^\/graph\/[^/]+\/media$/;
+const mediaDownloadRe = /^\/graph\/[^/]+$/;
+const mockMediaFileRe = /^\/mock-media-file\/(image|audio|document)$/;
+
+const mockFiles = {
+  image: {
+    mimeType: 'image/png', fileName: 'imagem-mock.png',
+    data: Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=', 'base64')
+  },
+  audio: {
+    mimeType: 'audio/wav', fileName: 'audio-mock.wav',
+    data: Buffer.from('UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA=', 'base64')
+  },
+  document: {
+    mimeType: 'application/pdf', fileName: 'documento-mock.pdf',
+    data: Buffer.from('%PDF-1.4\n1 0 obj<</Type/Catalog>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF')
+  }
+};
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
   if (req.method === 'GET' && url.pathname === '/health') {
     sendJson(res, 200, { status: 'ok', service: 'whatsapp-mock' });
+    return;
+  }
+
+  // Download de mídia recebida (usado pelo webhook para baixar anexos do cliente)
+  if (req.method === 'GET' && mediaDownloadRe.test(url.pathname)) {
+    const auth = req.headers.authorization ?? '';
+    if (!auth.startsWith('Bearer ')) {
+      sendJson(res, 401, { error: 'unauthorized' });
+      return;
+    }
+    // Simula o retorno da Cloud API: { url, mimeType, fileName }
+    const mediaId = url.pathname.split('/').pop() ?? '';
+    const kind = mediaId.includes('audio') ? 'audio' : mediaId.includes('document') ? 'document' : 'image';
+    const file = mockFiles[kind];
+    sendJson(res, 200, {
+      url: `${url.origin}/mock-media-file/${kind}`,
+      mime_type: file.mimeType,
+      file_name: file.fileName
+    });
+    return;
+  }
+
+  // Conteúdo binário da mídia simulada
+  if (req.method === 'GET' && mockMediaFileRe.test(url.pathname)) {
+    const auth = req.headers.authorization ?? '';
+    if (!auth.startsWith('Bearer ')) {
+      sendJson(res, 401, { error: 'unauthorized' });
+      return;
+    }
+    const kind = url.pathname.split('/').pop();
+    const file = mockFiles[kind];
+    res.writeHead(200, { 'Content-Type': file.mimeType });
+    res.end(file.data);
     return;
   }
 
@@ -63,9 +113,9 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Mensagem de mídia (imagem/documento) enviada após o upload
-    if (parsed.type === 'image' || parsed.type === 'document') {
-      const messageId = `wamid.MOCKIMG.${randomUUID().replace(/-/g, '')}`;
+    // Mensagem de mídia enviada após o upload
+    if (parsed.type === 'image' || parsed.type === 'audio' || parsed.type === 'document') {
+      const messageId = `wamid.MOCKMEDIA.${randomUUID().replace(/-/g, '')}`;
       sendJson(res, 200, {
         messaging_product: 'whatsapp',
         contacts: [{ input: parsed.to, wa_id: parsed.to }],

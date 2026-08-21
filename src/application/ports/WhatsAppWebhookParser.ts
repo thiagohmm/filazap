@@ -4,6 +4,7 @@ export type ParsedWebhookMessage = {
   timestamp: string;
   type: string;
   body: string | null;
+  mediaId: string | null;
 };
 
 export type ParsedWebhookStatus = {

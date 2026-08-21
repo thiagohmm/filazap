@@ -45,6 +45,8 @@ import {
 } from '@/infrastructure';
 import { Aes256GcmCredentialCipher } from '@/infrastructure/security/Aes256GcmCredentialCipher';
 import { LocalMediaStorage } from '@/infrastructure/storage/LocalMediaStorage';
+import { SupabaseMediaStorage } from '@/infrastructure/storage/SupabaseMediaStorage';
+import type { MediaStorage } from '@/application/ports/MediaStorage';
 import { ConsoleAuditLogger } from '@/infrastructure/observability/ConsoleAuditLogger';
 
 const idGenerator = () => randomUUID();
@@ -93,7 +95,17 @@ const whatsappGateway = new MetaWhatsAppGateway({
     'https://graph.facebook.com/v19.0'
 });
 
-const mediaStorage = new LocalMediaStorage();
+const useSupabaseStorage =
+  process.env.MEDIA_STORAGE_DRIVER === 'supabase' ||
+  (!!(process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL) &&
+    !!process.env.SUPABASE_SERVICE_ROLE_KEY);
+const mediaStorage: MediaStorage = useSupabaseStorage
+  ? new SupabaseMediaStorage(
+      process.env.SUPABASE_STORAGE_BUCKET ?? 'filazap-media',
+      process.env.SUPABASE_URL ?? process.env.NEXT_PUBLIC_SUPABASE_URL ?? '',
+      process.env.SUPABASE_SERVICE_ROLE_KEY ?? ''
+    )
+  : new LocalMediaStorage();
 
 export const useCases = {
   createOrganization: new CreateOrganization({
@@ -140,6 +152,9 @@ export const useCases = {
     messages,
     ticketEvents,
     parser: webhookParser,
+    gateway: whatsappGateway,
+    mediaStorage,
+    cipher: credentialCipher,
     clock: { now: () => new Date() },
     logger,
     idGenerator
@@ -273,4 +288,4 @@ export const useCases = {
   })
 };
 
-export { webhookParser, credentialCipher, channels, mediaStorage };
+export { webhookParser, credentialCipher, channels, members, mediaStorage };

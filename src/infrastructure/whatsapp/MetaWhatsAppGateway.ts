@@ -1,4 +1,6 @@
 import type {
+  FetchMediaCommand,
+  FetchMediaResult,
   SendMessageCommand,
   SendMessageResult,
   SendMediaCommand,
@@ -104,13 +106,16 @@ export class MetaWhatsAppGateway implements WhatsAppGateway {
     const base = this.deps.baseUrl();
     const url = `${base}/${command.channel.phoneNumberId}/messages`;
 
+    const isCaptionable =
+      command.mediaType === 'image' || command.mediaType === 'document';
+
     const payload = {
       messaging_product: 'whatsapp',
       to: command.to,
-      type: command.isImage ? 'image' : 'document',
-      [command.isImage ? 'image' : 'document']: {
+      type: command.mediaType,
+      [command.mediaType]: {
         id: command.fileRef.fileId,
-        caption: command.caption?.trim() || undefined
+        ...(isCaptionable ? { caption: command.caption?.trim() || undefined } : {})
       }
     };
 
@@ -144,5 +149,68 @@ export class MetaWhatsAppGateway implements WhatsAppGateway {
     }
 
     return { providerMessageId };
+  }
+
+  async fetchMedia(command: FetchMediaCommand): Promise<FetchMediaResult> {
+    const base = this.deps.baseUrl();
+    const url = `${base}/${command.mediaId}`;
+
+    let response: Response;
+    try {
+      response = await fetch(url, {
+        headers: { Authorization: `Bearer ${command.channel.accessToken}` }
+      });
+    } catch (error) {
+      throw new SendMessageFailedError(
+        error instanceof Error ? error.message : 'falha de rede'
+      );
+    }
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new SendMessageFailedError(`HTTP ${response.status}: ${body}`);
+    }
+
+    const data = (await response.json()) as {
+      url?: string;
+      mimeType?: string;
+      mime_type?: string;
+      fileName?: string;
+      file_name?: string;
+    };
+    if (!data.url) {
+      throw new SendMessageFailedError('resposta de mídia sem URL de download');
+    }
+
+    let download: Response;
+    try {
+      download = await fetch(data.url, {
+        headers: { Authorization: `Bearer ${command.channel.accessToken}` }
+      });
+    } catch (error) {
+      throw new SendMessageFailedError(
+        error instanceof Error ? error.message : 'falha de rede'
+      );
+    }
+
+    if (!download.ok) {
+      const body = await download.text();
+      throw new SendMessageFailedError(`HTTP ${download.status}: ${body}`);
+    }
+
+    const bytes = Buffer.from(await download.arrayBuffer());
+    if (bytes.byteLength > MAX_MEDIA_BYTES) {
+      throw new SendMessageFailedError('arquivo excede o limite de 16 MB');
+    }
+
+    const contentType =
+      (download.headers.get('content-type') ?? '').split(';')[0].trim();
+    return {
+      data: bytes,
+      mimeType:
+        data.mime_type ?? data.mimeType ??
+        (contentType && contentType !== 'application/octet-stream' ? contentType : 'application/octet-stream'),
+      filename: data.file_name ?? data.fileName ?? null
+    };
   }
 }
