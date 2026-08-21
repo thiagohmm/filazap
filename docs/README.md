@@ -14,6 +14,14 @@ justa para WhatsApp.
 - **[07-whatsapp.md](./07-whatsapp.md)** — Integração com WhatsApp Cloud API e o mock
 - **[08-seguranca.md](./08-seguranca.md)** — Modelo de segurança, RBAC e criptografia
 - **[09-testes.md](./09-testes.md)** — Estratégia de testes e cobertura
+- **[`diagrams/`](./diagrams/)** — Diagramas PlantUML do projeto:
+  - [`backend.puml`](./diagrams/backend.puml) — Arquitetura do backend (camadas, ports, adapters e sistemas externos).
+  - [`database.puml`](./diagrams/database.puml) — Schema do banco de dados (entidades e relacionamentos).
+
+> Os diagramas acima também estão embutidos em [`02-arquitetura.md`](./02-arquitetura.md)
+> e [`04-banco-de-dados.md`](./04-banco-de-dados.md) como blocos `plantuml`. Para
+> renderizá-los em imagem: `java -jar plantuml.jar diagrams/*.puml` (requer Graphviz
+> instalado) ou use [plantuml.com/plantuml](https://www.plantuml.com/plantuml/uml).
 
 > 📎 O **`PLANO-SEGURANCA.md`** (auditoria de segurança estática) e o
 > **`plano-saas-atendimento-whatsapp.md`** (planejamento do SaaS) ficam na raiz do

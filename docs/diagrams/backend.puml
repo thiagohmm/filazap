@@ -1,0 +1,162 @@
+@startuml backend
+!theme plain
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam linetype ortho
+skinparam nodesep 40
+skinparam ranksep 55
+skinparam defaultTextAlignment center
+
+title FilaZap — Arquitetura do Backend (Clean Architecture + DDD)
+
+' ===== Atores externos =====
+actor "Cliente\n(Dashboard Web)" as Browser
+actor "Meta WhatsApp\nCloud API" as Meta
+actor "Resend\n(e-mail)" as Resend
+actor "Supabase Storage\n/ Local FS" as Storage
+
+' ===== Camada de apresentação =====
+package "Presentation (Next.js App Router)" as Presentation {
+  [Rotas de API\n`src/app/api/**`\n(GET/POST/...)] as Routes
+  [Validadores Zod\n`src/presentation/validators`] as Validators
+  [Helpers\n`session.ts` · `helpers.ts`] as Helpers
+
+  Routes -[hidden]right- Validators
+  Validators -[hidden]right- Helpers
+}
+
+' ===== Camada de aplicação =====
+package "Application" as Application {
+  package "Use-cases (`use-cases/`)" as UseCases {
+    [Authenticate] as ucAuth
+    [CreateOrganization] as ucOrg
+    [RegisterChannel] as ucChannel
+    [ReceiveWhatsAppMessage] as ucReceive
+    [SendMessage] as ucSend
+    [AssignNextTicket] as ucAssignNext
+    [AssignTicket] as ucAssign
+    [FinishTicket / ReopenTicket / MoveTicketToWaitingCustomer] as ucTicket
+    [ListQueue / ListMessages / GetMetrics] as ucQuery
+    [InviteMember / RemoveMember] as ucMember
+    [RequestPasswordReset / ResetPassword] as ucReset
+    [SendTeamChatMessage / HeartbeatTeamChat] as ucTeam
+    [VerifyWebhook / UpdateMessageStatus] as ucWebhook
+  }
+
+  [Policies\n`OrganizationPolicy` (RBAC)] as Policies
+  [DTOs\n`src/application/dto`] as DTOs
+
+  package "Ports (interfaces)" as Ports {
+    [ContactRepository\nTicketRepository\nMessageRepository\n... *Repository] as RepoPorts
+    [WhatsAppGateway] as PortGateway
+    [WhatsAppWebhookParser] as PortParser
+    [WebhookSignatureVerifier] as PortVerifier
+    [CredentialCipher] as PortCipher
+    [TokenService\nPasswordHasher] as PortAuth
+    [PasswordResetMailer] as PortMailer
+    [MediaStorage] as PortStorage
+    [Clock\nAuditLogger] as PortMisc
+  }
+}
+
+' ===== Camada de domínio =====
+package "Domain (núcleo — sem dependências externas)" as Domain {
+  package "Entities" as Entities {
+    [User\nOrganization\nOrganizationMember] as EntIdentity
+    [WhatsAppChannel\nContact\nTicket] as EntChannel
+    [Message\nInternalNote\nTicketEvent\nWebhookEvent] as EntFlow
+  }
+  package "Value Objects" as VOs {
+    [Email\nPhoneNumberE164\nSlug] as VO1
+    [Role\nTicketStatus\nMessageDirection\nChannelStatus\nWebhookEventStatus] as VO2
+  }
+  [Errors\n`DomainError` + derivados] as Errors
+  [Services\n`Clock`] as DomainServices
+}
+
+' ===== Camada de infraestrutura =====
+package "Infrastructure (adapters)" as Infrastructure {
+  package "Database (Prisma)" as InfraDB {
+    [PrismaContactRepository\nPrismaTicketRepository\nPrismaMessageRepository\n... Prisma*Repository] as PrismaRepos
+    [PrismaClient\n`prisma.ts`] as PrismaClient
+  }
+  package "Auth" as InfraAuth {
+    [JwtTokenService] as Jwt
+    [BcryptPasswordHasher] as Bcrypt
+  }
+  package "Security" as InfraSec {
+    [Aes256GcmCredentialCipher] as Cipher
+  }
+  package "WhatsApp" as InfraWa {
+    [MetaWhatsAppGateway] as WaGateway
+    [MetaWhatsAppWebhookParser] as WaParser
+    [MetaWebhookSignatureVerifier] as WaVerifier
+  }
+  package "Email" as InfraEmail {
+    [ResendPasswordResetMailer] as Mailer
+  }
+  package "Storage" as InfraStorage {
+    [SupabaseMediaStorage\nLocalMediaStorage] as Media
+  }
+  package "Observability" as InfraObs {
+    [ConsoleAuditLogger] as Audit
+  }
+}
+
+' ===== Banco de dados =====
+database "PostgreSQL" as PG
+
+' ===== Container (composition root) =====
+[Container\n`src/container.ts`\n(composition root / injeção de dependências)] as Container
+
+' ===== Fluxo de requisição (dependências apontam para dentro) =====
+Browser --> Routes : HTTP + JWT
+Routes --> Validators : valida entrada
+Routes --> Helpers : sessão / resposta
+Routes --> UseCases : delega `execute()`
+
+UseCases --> Policies : aplica RBAC
+UseCases --> DTOs : contratos in/out
+UseCases --> RepoPorts : usa abstrações
+UseCases --> PortGateway
+UseCases --> PortMailer
+UseCases --> PortStorage
+UseCases --> PortMisc
+
+Policies --> EntIdentity : lê entidade
+UseCases --> EntChannel : manipula entidades
+UseCases --> EntFlow
+EntChannel ..> Errors : lança erros de domínio
+EntChannel ..> VO1 : contém VOs
+EntChannel ..> VO2
+
+' ===== Inversão de dependência: infra implementa os ports =====
+PrismaRepos ..> RepoPorts : implementa
+WaGateway ..> PortGateway : implementa
+WaParser ..> PortParser : implementa
+WaVerifier ..> PortVerifier : implementa
+Cipher ..> PortCipher : implementa
+Jwt ..> PortAuth : implementa
+Bcrypt ..> PortAuth : implementa
+Mailer ..> PortMailer : implementa
+Media ..> PortStorage : implementa
+Audit ..> PortMisc : implementa
+
+' ===== Container conecta use-cases aos adapters =====
+Container ..> UseCases : instancia
+Container ..> PrismaRepos : injeta
+Container ..> WaGateway : injeta
+Container ..> Mailer : injeta
+Container ..> Media : injeta
+Container ..> Jwt : injeta
+Container ..> Cipher : injeta
+
+' ===== Infra → sistemas externos =====
+PrismaRepos --> PrismaClient
+PrismaClient --> PG
+WaGateway --> Meta : envia mensagens
+Meta --> Routes : webhook\n(POST /api/webhooks/whatsapp)
+Mailer --> Resend : e-mail de reset
+Media --> Storage : mídia
+
+@enduml
