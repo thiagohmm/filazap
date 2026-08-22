@@ -4,7 +4,12 @@ import { themeInitScript } from './lib/theme';
 
 export const metadata: Metadata = {
   title: 'FilaZap — Central de Atendimento',
-  description: 'Fila justa para atendimento via WhatsApp'
+  description: 'Fila justa para atendimento via WhatsApp',
+  viewport: {
+    width: 'device-width',
+    initialScale: 1,
+    viewportFit: 'cover'
+  }
 };
 
 export default function RootLayout({

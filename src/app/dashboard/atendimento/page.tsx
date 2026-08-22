@@ -178,6 +178,7 @@ export default function AtendimentoPage() {
   const [wide, setWide] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth >= 1200 : true
   );
+  const [mobileView, setMobileView] = useState<'queue' | 'chat'>('queue');
   const [layout, setLayout] = useState({
     left: 0,
     width: typeof window !== 'undefined' ? window.innerWidth : 1200
@@ -358,6 +359,7 @@ export default function AtendimentoPage() {
     if (out?.assigned && out.ticket) {
       setSelectedTicketId(out.ticket.id);
       setSelectedContactId(out.ticket.contactId);
+      setMobileView('chat');
       await loadAll();
       return;
     }
@@ -389,6 +391,7 @@ export default function AtendimentoPage() {
     if (!selectedTicketId) return;
     await api(`/tickets/${selectedTicketId}/finish`);
     setSelectedTicketId(null);
+    setMobileView('queue');
     loadAll();
   };
 
@@ -672,6 +675,7 @@ export default function AtendimentoPage() {
 
   const openContactFromSearch = (contactId: string) => {
     setSelectedContactId(contactId);
+    setMobileView('chat');
     setShowSearch(false);
     setSearchQuery('');
     setSearchResults([]);
@@ -679,6 +683,7 @@ export default function AtendimentoPage() {
 
   const selectTicket = (id: string) => {
     setSelectedTicketId(id);
+    setMobileView('chat');
     const item = queue.find((q) => q.ticketId === id);
     if (item) setSelectedContactId(item.contact.id);
   };
@@ -741,11 +746,19 @@ export default function AtendimentoPage() {
         </div>
       </Topbar>
 
-      <div className="atend-body" ref={bodyRef} style={{
+      <div className={`atend-body mobile-view-${mobileView}`} ref={bodyRef} style={{
         gridTemplateColumns: wide
           ? `${leftWidth}px minmax(340px, 1fr) ${rightWidth}px`
           : undefined,
       }}>
+        <nav className="mobile-view-tabs" aria-label="Alternar entre fila e conversa">
+          <button type="button" className={mobileView === 'queue' ? 'active' : ''} onClick={() => setMobileView('queue')}>
+            Fila{queue.length > 0 ? <span className="tab-count">{queue.length}</span> : null}
+          </button>
+          <button type="button" className={mobileView === 'chat' ? 'active' : ''} onClick={() => setMobileView('chat')}>
+            {selectedTicket ? `Conversa${selectedTicket.contact?.name ? ` · ${selectedTicket.contact.name}` : ''}` : 'Conversa'}
+          </button>
+        </nav>
         <div
           className="resize-handle"
           data-handle="left"
