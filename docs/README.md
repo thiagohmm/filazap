@@ -8,10 +8,10 @@ justa para WhatsApp.
 - **[01-overview.md](./01-overview.md)** — Visão geral, objetivos e funcionalidades
 - **[02-arquitetura.md](./02-arquitetura.md)** — Arquitetura (Clean Architecture/DDD), camadas e container
 - **[03-configuracao.md](./03-configuracao.md)** — Como configurar e rodar o projeto localmente
-- **[04-banco-de-dados.md](./04-banco-de-dados.md)** — Modelo de dados (Prisma), enums e migrações
+- **[04-banco-de-dados.md](./04-banco-de-dados.md)** — Modelo de dados (PostgreSQL/Flyway), enums e migrações
 - **[05-api.md](./05-api.md)** — Referências da API REST (rotas, autenticação, webhooks)
 - **[06-casos-de-uso.md](./06-casos-de-uso.md)** — Casos de uso, políticas e regras de negócio
-- **[07-whatsapp.md](./07-whatsapp.md)** — Integração com WhatsApp Cloud API e o mock
+- **[07-whatsapp.md](./07-whatsapp.md)** — WhatsApp: Meta Cloud API **or** WAHA (any phone, QR pairing)
 - **[08-seguranca.md](./08-seguranca.md)** — Modelo de segurança, RBAC e criptografia
 - **[09-testes.md](./09-testes.md)** — Estratégia de testes e cobertura
 - **[`diagrams/`](./diagrams/)** — Diagramas PlantUML do projeto:

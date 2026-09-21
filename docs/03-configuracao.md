@@ -2,114 +2,116 @@
 
 ## 3.1 Pré-requisitos
 
-- Node.js 20+ (ver ``.tool-versions`).
-- PostgreSQL 16+ (recomendado: via Docker Compose).
+- **Java 21** (backend Spring Boot — see `.tool-versions` and `backend/pom.xml`).
+- **Maven 3.9+**.
+- **Node.js 20+** — only for the React SPA (`frontend/`, Vite) and the Node helper scripts.
+- **Docker + Docker Compose** (Postgres, mock, WAHA).
 - OpenSSL para gerar segredos.
+
+The Next.js backend and Prisma were removed; there is no root `package.json` and no
+`npm run db:*` anymore. Schema is managed by **Flyway** inside the Java app.
 
 ## 3.2 Variáveis de ambiente
 
-Copie `.env.example` para `.env` e preencha os valores. Principais variáveis:
+Copie `.env.example` para `.env` e preencha os valores.
 
 | Variável | Descrição | Exemplo |
 |----------|-----------|---------|
-| `NODE_ENV` | Ambiente (`development`, `test`). | `development` |
-| `PORT` | Porta do servidor Next. | `3000` |
-| `DATABASE_URL` | URI do PostgreSQL. | `postgresql://filazap:filazap@localhost:5432/filazap` |
-| `TEST_DATABASE_URL` | Banco usado pelos testes. | `postgresql://...:5433/filazap_test` |
-| `MEDIA_STORAGE_DRIVER` | `supabase` na Vercel; `local` no Docker mock. | `local` |
-| `NEXT_PUBLIC_SUPABASE_URL` | URL pública do projeto Supabase. | — |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Chave pública usada somente com uploads assinados. | — |
-| `SUPABASE_SERVICE_ROLE_KEY` | Chave privada usada apenas no servidor. | — |
-| `SUPABASE_STORAGE_BUCKET` | Bucket privado das mídias. | `filazap-media` |
+| `SERVER_PORT` | Porta do backend Spring Boot. | `8080` |
+| `SPRING_DATASOURCE_URL` | JDBC URL do PostgreSQL. | `jdbc:postgresql://localhost:5432/filazap` |
+| `SPRING_DATASOURCE_USERNAME` / `_PASSWORD` | Credentials do banco. | `filazap` / `filazap` |
 | `JWT_SECRET` | Secret do JWT (HS256). **Gerar valor forte.** | `openssl rand -base64 32` |
-| `SEED_ADMIN_*` / `SEED_ORG_*` | Bootstrap do admin e organização inicial. | — |
+| `WHATSAPP_DRIVER` | `meta` (Cloud API) ou `waha` (qualque celular via QR). | `meta` |
 | `WHATSAPP_API_URL` | Base da Cloud API (use o mock em dev). | `http://localhost:4000/graph` |
-| `WHATSAPP_CREDENTIAL_ENCRYPTION_KEY` | Chave-mestra de criptografia de credenciais. | `openssl rand -hex 32` |
-| `SEED_DEMO_DATA` | Cria dados demonstrativos no seed (`true`/`false`). | `false` |
+| `WAHA_URL` | Base URL of the WAHA gateway. | `http://localhost:3000` |
+| `WAHA_API_KEY` | API key of the WAHA instance (`X-Api-Key`). | `openssl rand -hex 32` |
+| `WAHA_WEBHOOK_SECRET` | HMAC secret for WAHA webhooks (`X-Webhook-Hmac`). | `openssl rand -hex 32` |
+| `WAHA_IMAGE` | Image + engine tag (see 07-whatsapp.md). | `devlikeapro/waha:arm-2026.8.2` |
+| `WHATSAPP_CREDENTIAL_ENCRYPTION_KEY` | Chave-mestra de criptografia de credenciais (>= 32 bytes). | `openssl rand -hex 32` |
+| `MEDIA_STORAGE_DRIVER` | `local` ou `supabase`. | `local` |
+| `MEDIA_STORAGE_ROOT` | Raiz do storage local. | `./storage` |
+| `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_STORAGE_BUCKET` | Storage de media (opcional). | — |
+| `APP_URL` | URL pública do frontend (link de e-mail de reset). | `http://localhost:3000` |
+| `RESEND_API_KEY` / `EMAIL_FROM` | E-mail de recuperação de senha. | — |
+| `ORGANIZATION_SIGNUP_ALLOWED_DOMAINS` | Domínios permitidos para cadastro (vazio = qualquer). | `exemplo.com` |
 
 > 🔒 **Nunca** comite `.env`. Segredos padrão devem ser substituídos antes de qualquer
-> deploy — ver **[08-seguranca.md](./08-seguranca.md)** e `PLANO-SEGURANCA.md`.
+> deploy — ver **[08-seguranca.md](./08-seguranca.md)** and `PLANO-SEGURANCA.md`.
 
 ## 3.3 Instalação
 
 ```bash
-npm install          # instala dependências
-npx prisma generate  # gera o cliente Prisma
+cp .env.example .env
+# fill in the secrets (JWT_SECRET, WHATSAPP_CREDENTIAL_ENCRYPTION_KEY at minimum)
 ```
 
-## 3.4 Banco de dados (ambiente de desenvolvimento)
+## 3.4 Banco de dados
 
-A forma mais rápida é subir o ambiente completo com Docker Compose:
+**Flyway** applies the schema automatically at startup (`backend/src/main/resources/db/migration/
+V1__init.sql`). No separate migrate command exists.
+
+### Ambiente com Docker (recommended)
 
 ```bash
-docker compose up --build        # compila e sobe postgres, whatsapp-mock e o app
-npm run db:migrate               # cria/altera as migrações (se não usar compose)
-npm run db:seed                  # popula admin + organização inicial
+docker compose up --build     # postgres + whatsapp-mock + backend + frontend
 ```
 
-> No `docker-compose.yml`, o serviço `app` compila o Next.js durante o build e
-> executa migrações, seed demonstrativo e `next start`. Quando os healthchecks
-> estiverem saudáveis, acesse `http://localhost:3000`.
+When the healthchecks are green, open `http://localhost:3000`.
 
-### Ambiente demonstrativo
+### Bootstrap of the first admin
 
-O Compose define `SEED_DEMO_DATA=true` e cria, de forma idempotente:
-
-- organização e administrador configurados pelas variáveis `SEED_ADMIN_*`;
-- canal conectado ao WhatsApp mock;
-- atendentes, contatos, conversas, notas e tickets em diferentes estados.
-
-Entre usando `SEED_ADMIN_EMAIL` e `SEED_ADMIN_PASSWORD` do seu `.env`. Para
-recriar a demonstração do zero, removendo também o volume local do banco:
+There is **no seeder** anymore (the old `prisma/seed.ts` was removed with the Next.js stack).
+Create the first organization and admin through the public API:
 
 ```bash
-docker compose down -v
-docker compose up --build
+curl -s -X POST http://localhost:8080/api/organizations \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Me Company","adminName":"Admin","adminEmail":"admin@example.com","adminPassword":"Str0ngPassw0rd"}'
 ```
 
-Com o ambiente saudável, valide o ciclo completo de recebimento e resposta:
+Then log in at `POST /api/auth/login` (or through the SPA at `http://localhost:3000`).
+Note `ORGANIZATION_SIGNUP_ALLOWED_DOMAINS` restricts the e-mail domain, and signup is rate
+limited (3/min per IP).
+
+To reset the database from scratch (including the volume):
 
 ```bash
-npm run test:docker-flow
+docker compose down -v && docker compose up --build
 ```
 
-### Comandos de banco (`package.json`)
+## 3.5 Build and tests
 
-| Comando | Função |
+| Command | Função |
 |---------|--------|
-| `npm run db:generate` | Gera o cliente Prisma. |
-| `npm run db:migrate` | Modo dev: cria e aplica migrações. |
-| `npm run db:deploy` | Aplica migrações em produção. |
-| `npm run db:seed` | Popula dados iniciais (`prisma/seed.ts`). |
-| `npm run db:studio` | Abre o Prisma Studio (interface visual). |
-
-## 3.5 Executando
-
-| Comando | Função |
-|---------|--------|
-| `npm run dev` | Servidor de desenvolvimento (porta 3000). |
-| `npm run build` | Build de produção. |
-| `npm run start` | Servidor de produção. |
-| `npm run typecheck` | Verificação de tipos (`tsc --noEmit`). |
-| `npm run lint` | ESLint. |
+| `cd backend && mvn spring-boot:run` | Backend in dev (port 8080). |
+| `cd backend && mvn test` | Unit/integration tests (JUnit). |
+| `cd backend && mvn -q package` | Executable JAR in `backend/target/`. |
+| `cd frontend && npm install && npm run dev` | SPA in dev (Vite, port 5173). |
+| `cd frontend && npm run build` | Static build in `frontend/dist/`. |
 
 ## 3.6 Scripts auxiliares (`scripts/`)
 
-- `migrate.sh` — aplica migrações.
-- `seed.sh` — roda o seed.
-- `wait-for-db.sh` — aguarda o banco ficar pronto.
-- `simulate-whatsapp-webhook.sh` — envia um webhook de teste ao app.
+| Script | Função |
+|--------|--------|
+| `build-and-up.sh` | Builds and starts the compose stack. |
+| `wait-for-db.sh` | Waits until PostgreSQL accepts connections. |
+| `simulate-whatsapp-webhook.sh` | Sends a test **Meta Cloud API** webhook, signed by the mock. Meta driver only. |
+| `test-docker-flow.mjs` | End-to-end flow against a running stack (login, ticket, reply). Needs Node. |
 
-## 3.7 Ambiente com Docker
+## 3.7 Compose profiles
+
+Optional services are opt-in via profiles:
 
 ```bash
-docker compose up --build              # ambiente completo (dev)
-docker compose -f docker-compose.test.yml up --build   # sobe só p/ rodar os testes
+docker compose up --build                                   # core stack
+docker compose --profile optional up -d                 # + redis, mailpit
+docker compose --profile waha   up -d                   # + WAHA gateway (any phone, QR)
 ```
 
-O `docker-compose.yml` inclui serviços opcionais (habilitados por perfil):
-- `redis` (6379) — cache/file.
-- `mailpit` (1025/8025) — teste de e-mails.
-- `whatsapp-mock` (4000) — simula a Cloud API.
+- `redis` (6379) — cache.
+- `mailpit` (1025/8025) — SMTP testing.
+- `whatsapp-mock` (4000) — simulates the Meta Cloud API.
+- `waha` (host **3001**) — real WhatsApp gateway for any phone; see
+  **[07-whatsapp.md](./07-whatsapp.md)**.
 
-> 📎 Ver **[07-whatsapp.md](./07-whatsapp.md)** para detalhes do mock.
+> 📎 Ver **[07-whatsapp.md](./07-whatsapp.md)** para the two drivers and **[08-seguranca.md](./08-seguranca.md)**.

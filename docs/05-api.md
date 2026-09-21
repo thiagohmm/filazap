@@ -1,8 +1,9 @@
 # 5. API REST
 
-A API é construída com o **Next.js App Router** (rotas de servidor em
-`src/app/api/**`). Cada `route.ts` expõe `GET`/`POST`/etc., é **fina** (autentica,
-valida com Zod e delega a un use-case) e tem `export const runtime = 'nodejs'`.
+A API é construída con **Spring MVC** (`@RestController`s in
+`backend/src/main/java/com/filazap/presentation/web/`). Each controller is **thin** (reads the
+actor from the JWT, validates, and delegates to one use-case) and every error is mapped to
+`{ "error": "..." }` by `GlobalExceptionHandler`.
 
 ## 5.1 Autenticação e sessão
 

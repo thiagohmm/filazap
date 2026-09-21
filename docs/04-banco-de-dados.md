@@ -1,7 +1,7 @@
 # 4. Banco de Dados
 
-O banco é o **PostgreSQL**, modelado com **Prisma**. O schema está em
-`prisma/schema.prisma` e as migrações em `prisma/migrations/`.
+O banco é o **PostgreSQL**. The schema lives in
+`backend/src/main/resources/db/migration/V1__init.sql` and is applied by **Flyway** at startup.
 
 ## 4.1 Diagrama (schema completo)
 
@@ -12,7 +12,7 @@ skinparam shadowing false
 skinparam defaultFontSize 11
 skinparam linetype ortho
 
-title FilaZap — Schema do Banco de Dados (PostgreSQL / Prisma)
+title FilaZap — Schema do Banco de Dados (PostgreSQL)
 
 entity "User" as user {
   * id : String <<PK, cuid>>
@@ -261,27 +261,30 @@ org |o--o{ wevent : "webhooks"
 
 Todos os dados vinculados a uma organização carregam `organizationId`. Listagens e
 relatórios são sempre escopados por `organizationId` do ator autenticado. IDs são
-`cuid()` (Prisma) ou `randomUUID` (aplicações), evitando IDOR por adivinhação.
+`UUID.randomUUID()` (`IdGenerator` bean in `AppConfig`), evitando IDOR por adivinhação.
 
 > ⚠️ Alguns `findById` (getters pontuais) recebem apenas o `id`. Use-cases devem
 > passar IDs da própria organização — ver achado S6 no `PLANO-SEGURANCA.md`.
 
 ## 4.4 Migrações
 
+**Flyway** runs automatically when the Spring Boot app starts; there is no separate CLI.
+
 ```bash
-npm run db:migrate     # dev: cria + aplica
-npm run db:deploy      # produção: só aplica
-npx prisma studio      # interface visual
+cd backend && mvn -o spring-boot:run   # applies pending migrations on startup
 ```
 
-Cada migração fica em `prisma/migrations/<timestamp>_nome/migration.sql`.
+Each migration lives in `backend/src/main/resources/db/migration/V<N>__<name>.sql`.
 
 ## 4.5 Seed
 
-`prisma/seed.ts` cria, na primeira execução:
+There is **no seeder** — the old `prisma/seed.ts` went away with the Next.js stack. The first
+organization and admin are created through the public API:
 
-- Uma **organização** inicial (`SEED_ORG_SLUG`).
-- Um **usuário admin** OWNER (`SEED_ADMIN_EMAIL` / `SEED_ADMIN_PASSWORD`).
+```bash
+curl -s -X POST http://localhost:8080/api/organizations \
+  -H 'Content-Type: application/json' \
+  -d '{"name":"Me Company","adminName":"Admin","adminEmail":"admin@example.com","adminPassword":"Str0ngPassw0rd"}'
+```
 
-> 🔒 Senhas padrão no seed são um risco (achado S2). Troque antes de prod — ver
-> `PLANO-SEGURANCA.md`.
+`CreateOrganization` hashes the admin password with BCrypt (cost 12) before storing it.

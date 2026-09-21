@@ -17,16 +17,17 @@ title FilaZap — Arquitetura do Backend (Clean Architecture + DDD)
 
 actor "Cliente\n(Dashboard Web)" as Browser
 actor "Meta WhatsApp\nCloud API" as Meta
+actor "WAHA\ngateway (self-hosted)" as Waha
 actor "Resend\n(e-mail)" as Resend
 actor "Supabase Storage\n/ Local FS" as Storage
 
-package "Presentation (Next.js App Router)" as Presentation {
-  [Rotas de API\n`src/app/api/**`\n(GET/POST/...)] as Routes
-  [Validadores Zod\n`src/presentation/validators`] as Validators
-  [Helpers\n`session.ts` · `helpers.ts`] as Helpers
+package "Presentation (Spring MVC)" as Presentation {
+  [Controllers\n`presentation/web/*Controller`] as Routes
+  [JwtAuthenticationFilter\n`presentation/security`] as JwtFilter
+  [GlobalExceptionHandler\n`presentation/error`] as ErrorHandler
 
-  Routes -[hidden]right- Validators
-  Validators -[hidden]right- Helpers
+  Routes -[hidden]right- JwtFilter
+  JwtFilter -[hidden]right- ErrorHandler
 }
 
 package "Application" as Application {
@@ -77,9 +78,9 @@ package "Domain (núcleo — sem dependências externas)" as Domain {
 }
 
 package "Infrastructure (adapters)" as Infrastructure {
-  package "Database (Prisma)" as InfraDB {
-    [PrismaContactRepository\nPrismaTicketRepository\nPrismaMessageRepository\n... Prisma*Repository] as PrismaRepos
-    [PrismaClient\n`prisma.ts`] as PrismaClient
+  package "Database (Spring JDBC)" as InfraDB {
+    [Jdbc*Repository\n`infrastructure/persistence`] as JdbcRepos
+    [JdbcTemplate\nNamedParameterJdbcTemplate] as JdbcClient
   }
   package "Auth" as InfraAuth {
     [JwtTokenService] as Jwt
@@ -89,9 +90,9 @@ package "Infrastructure (adapters)" as Infrastructure {
     [Aes256GcmCredentialCipher] as Cipher
   }
   package "WhatsApp" as InfraWa {
-    [MetaWhatsAppGateway] as WaGateway
-    [MetaWhatsAppWebhookParser] as WaParser
-    [MetaWebhookSignatureVerifier] as WaVerifier
+    [MetaWhatsAppGateway\nWahaWhatsAppGateway] as WaGateway
+    [MetaWhatsAppWebhookParser\nWahaWhatsAppWebhookParser] as WaParser
+    [MetaWebhookSignatureVerifier\nWahaWebhookSignatureVerifier] as WaVerifier
   }
   package "Email" as InfraEmail {
     [ResendPasswordResetMailer] as Mailer
@@ -106,7 +107,7 @@ package "Infrastructure (adapters)" as Infrastructure {
 
 database "PostgreSQL" as PG
 
-[Container\n`src/container.ts`\n(composition root / injeção de dependências)] as Container
+[Container\n`config/InfrastructureConfig.java`\n(composition root / injeção de dependências)] as Container
 
 ' Fluxo de requisição (dependências apontam para dentro)
 Browser --> Routes : HTTP + JWT
@@ -130,7 +131,7 @@ EntChannel ..> VO1 : contém VOs
 EntChannel ..> VO2
 
 ' Inversão de dependência: infra implementa os ports
-PrismaRepos ..> RepoPorts : implementa
+JdbcRepos ..> RepoPorts : implementa
 WaGateway ..> PortGateway : implementa
 WaParser ..> PortParser : implementa
 WaVerifier ..> PortVerifier : implementa
@@ -143,7 +144,7 @@ Audit ..> PortMisc : implementa
 
 ' Container conecta use-cases aos adapters
 Container ..> UseCases : instancia
-Container ..> PrismaRepos : injeta
+Container ..> JdbcRepos : injeta
 Container ..> WaGateway : injeta
 Container ..> Mailer : injeta
 Container ..> Media : injeta
@@ -151,10 +152,12 @@ Container ..> Jwt : injeta
 Container ..> Cipher : injeta
 
 ' Infra → sistemas externos
-PrismaRepos --> PrismaClient
-PrismaClient --> PG
-WaGateway --> Meta : envia mensagens
+JdbcRepos --> JdbcClient
+JdbcClient --> PG
+WaGateway --> Meta : envia (driver=meta)
+WaGateway --> Waha : envia (driver=waha)
 Meta --> Routes : webhook\n(POST /api/webhooks/whatsapp)
+Waha --> Routes : webhook\n(POST /api/webhooks/whatsapp)
 Mailer --> Resend : e-mail de reset
 Media --> Storage : mídia
 @enduml
@@ -194,40 +197,47 @@ reconstruir a partir de JSON) e `toJSON()`.
 
 ### 2.1.3 `src/infrastructure` — Adaptação ao externo
 
-- **Database** (`database/`): `Prisma*Repository` (implementações dos ports de repositório)
-  e o cliente Prisma (`prisma.ts`).
+- **persistence**: `Jdbc*Repository` (implementações dos ports de repositório) usando
+  `JdbcTemplate`/`NamedParameterJdbcTemplate` con SQL explícito e `ON CONFLICT` (upsert).
 - **auth**: `BcryptPasswordHasher`, `JwtTokenService`.
 - **security**: `Aes256GcmCredentialCipher` (criptografia de credenciais em repouso).
-- **whatsapp**: `MetaWhatsAppGateway` (envio), `MetaWhatsAppWebhookParser`,
-  `MetaWebhookSignatureVerifier`.
+- **whatsapp**: `MetaWhatsAppGateway` / `WahaWhatsAppGateway` (envio),
+  `MetaWhatsAppWebhookParser` / `WahaWhatsAppWebhookParser`,
+  `MetaWebhookSignatureVerifier` / `WahaWebhookSignatureVerifier`. Selected once by
+  `filazap.whatsapp-driver`.
 - **email**: `ResendPasswordResetMailer` (implementação do port `PasswordResetMailer`).
 - **storage**: `SupabaseMediaStorage` / `LocalMediaStorage` (implementações do port
   `MediaStorage` — mídia de mensagens).
 - **observability**: `ConsoleAuditLogger` (implementação do port `AuditLogger`).
 
-### 2.1.4 `src/presentation` — Interface web/API
+### 2.1.4 `presentation` — Interface web/API
 
-- **api**: rotas do Next.js (`app/api/**`) e helpers (`helpers.ts`, `session.ts`).
-- **validators**: schemas Zod aplicados nas entradas das rotas.
+- **web**: `@RestController`s (`AuthController`, `TicketController`, `WhatsAppWebhookController`,
+  ...) plus helpers `Req`/`HttpUtil`.
+- **security**: `JwtAuthenticationFilter` (`OncePerRequestFilter`) populates the actor.
+- **error**: `GlobalExceptionHandler` maps domain errors to `{ "error": "..." }`.
 
 ## 2.2 Injeção de dependências e container
 
-O **container** (`src/container.ts`) é o ponto de composição (composition root). Ele:
+The composition root is `config/InfrastructureConfig.java` (Spring `@Configuration`), driven by
+`FilazapProperties` (`@ConfigurationProperties(prefix = "filazap")`). It:
 
-- Instancia os repositórios Prisma e os serviços de infraestrutura.
-- Conecta cada **use-case** aos seus ports (repositórios, clock, logger, gerador de ID).
-- Expõe o objeto `useCases`, consumido pelas rotas (`src/app/api/**`).
+- Instancia the JDBC repositories and the infrastructure services.
+- Binds each **use-case** to its ports (constructor injection via `@Service`/`@Bean`).
+- Chooses the WhatsApp **driver** once, at startup, so no other layer branches on it.
 
-```ts
-import { useCases } from '@/container';
-// ...na rota: await useCases.assignTicket.execute({...})
+```java
+@Bean
+public WhatsAppGateway whatsAppGateway(FilazapProperties props) {
+    return useWaha(props) ? new WahaWhatsAppGateway(...) : new MetaWhatsAppGateway(...);
+}
 ```
 
-Isso mantém as rotas finas: autenticam, validam e delegam ao use-case.
+This keeps the controllers thin: authenticate, validate, delegate to the use-case.
 
 ## 2.3 Ports (interfaces de infraestrutura)
 
-Exemplos de ports em `src/application/ports/`:
+Exemplos de ports em `application/port/`:
 
 | Port | Responsabilidade |
 |------|------------------|

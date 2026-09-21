@@ -40,11 +40,11 @@ entrada, atribua tickets a agentes e responda diretamente pela Cloud API da Meta
 
 ## 1.4 Stack tecnológica
 
-- **Framework:** Next.js (App Router) — atua como API REST + front-end.
-- **Linguagem:** TypeScript (estrito).
-- **Banco de dados:** PostgreSQL (via Prisma ORM).
-- **Cache/ filas opcionais:** Redis e Mailpit (perfis `optional` no docker-compose).
-- **WhatsApp:** Cloud API da Meta (+ mock local para desenvolvimento).
-- **Testes:** Vitest.
+- **Framework:** Spring Boot 3 (Java 21) — REST API.
+- **Linguagem:** Java 21 (backend), TypeScript/React (SPA `frontend/`).
+- **Banco de dados:** PostgreSQL (Spring JDBC + Flyway).
+- **Cache/ filas opcionais:** Redis e Mailpit (profiles `optional` no docker-compose).
+- **WhatsApp:** Cloud API da Meta **ou** WAHA (any phone, via QR) — selectable by driver.
+- **Testes:** JUnit 5 + Spring Boot Test.
 
 > 📎 Ver **[02-arquitetura.md](./02-arquitetura.md)** para os detalhes de arquitetura.

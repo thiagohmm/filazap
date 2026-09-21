@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>FilaZap — Central de Atendimento</title>
+    <script>
+      try {
+        var c = JSON.parse(localStorage.getItem('filazap_theme_cache') || 'null');
+        var theme = c && c.theme === 'dark' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = theme;
+        if (c && /^#[0-9a-fA-F]{6}$/.test(c.brandColor)) {
+          document.documentElement.style.setProperty('--primary', c.brandColor);
+          var v = c.brandColor.replace('#', '');
+          var n = parseInt(v, 16);
+          var r = Math.max(0, Math.round(((n >> 16) & 255) * 0.85));
+          var g = Math.max(0, Math.round(((n >> 8) & 255) * 0.85));
+          var b = Math.max(0, Math.round((n & 255) * 0.85));
+          document.documentElement.style.setProperty('--primary-dark', '#' + ((r << 16) | (g << 8) | b).toString(16).padStart(6, '0'));
+          document.documentElement.style.setProperty('--primary-soft', c.brandColor + '1f');
+        }
+      } catch (e) {}
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

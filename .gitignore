@@ -1,22 +1,36 @@
+# Node
 node_modules
-.next
-out
-build
-next-env.d.ts
+
+# Frontend Vite
+frontend/dist
+frontend/node_modules
+
+# Backend Java
+backend/target
 
 # env
 .env
 .env.local
 .env.*.local
 
-# database
-prisma/*.db
-prisma/*.db-journal
+# storage local de media
+storage/
 
 # test
 coverage
+
+# TypeScript composite build info
+*.tsbuildinfo
 
 # misc
 .DS_Store
 *.pem
 npm-debug.log*
+
+# IDE / tooling
+.metals/
+.vscode/
+.project
+.classpath
+.settings/
+.pi/

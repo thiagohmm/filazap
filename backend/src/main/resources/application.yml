@@ -1,0 +1,47 @@
+server:
+  port: ${SERVER_PORT:8080}
+
+spring:
+  application:
+    name: filazap-backend
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/filazap}
+    username: ${SPRING_DATASOURCE_USERNAME:filazap}
+    password: ${SPRING_DATASOURCE_PASSWORD:filazap}
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+  jackson:
+    serialization:
+      write-dates-as-timestamps: false
+
+filazap:
+  # Segredo JWT (HS256). Obrigatório (>= 16 caracteres; use openssl rand -base64 32).
+  jwt-secret: ${JWT_SECRET:__CHANGE_ME_ON_DEPLOY__}
+  # Chave mestre para criptografar credenciais do WhatsApp em repouso (>= 32 caracteres).
+  credential-encryption-key: ${WHATSAPP_CREDENTIAL_ENCRYPTION_KEY:__CHANGE_ME_ON_DEPLOY__}
+  app-url: ${APP_URL:http://localhost:5173}
+  whatsapp-api-url: ${WHATSAPP_API_URL:https://graph.facebook.com/v19.0}
+  # Driver WhatsApp: "meta" (Cloud API — exige number Business Verified) ou
+  # "waha" (gateway self-hosted — paira qualquer celular via QR code).
+  whatsapp-driver: ${WHATSAPP_DRIVER:meta}
+  media-storage-driver: ${MEDIA_STORAGE_DRIVER:local}
+  media-storage-root: ${MEDIA_STORAGE_ROOT:./storage}
+  organization-signup-allowed-domains: ${ORGANIZATION_SIGNUP_ALLOWED_DOMAINS:}
+  resend:
+    api-key: ${RESEND_API_KEY:}
+    from: ${EMAIL_FROM:}
+  supabase:
+    url: ${SUPABASE_URL:}
+    service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:}
+    storage-bucket: ${SUPABASE_STORAGE_BUCKET:filazap-media}
+  # WAHA (utilizado quando whatsapp-driver=waha).
+  waha:
+    url: ${WAHA_URL:http://localhost:3000}
+    # API key WAHA exige no cabeçalho X-Api-Key. Persistida no .env (WAHA_API_KEY) para a
+    # chave não mudar a cada reinício do container WAHA (senão o WAHA gera uma nova em cada
+    # start e o backend passa a responder 401).
+    api-key: ${WAHA_API_KEY:}
+    # Transcode audio to ogg/opus via ffmpeg (WhatsApp voice notes require ogg/opus).
+    # Set false only if the WAHA image has no ffmpeg.
+    convert-voice: ${WAHA_CONVERT_VOICE:true}

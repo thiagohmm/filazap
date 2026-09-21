@@ -39,7 +39,6 @@ services:
       context: .
       dockerfile: Dockerfile.whatsapp-mock
     restart: unless-stopped
-    # Bind em 127.0.0.1: o mock é apenas para desenvolvimento local (S8)
     ports:
       - "127.0.0.1:4000:4000"
     healthcheck:
@@ -48,21 +47,29 @@ services:
       timeout: 3s
       retries: 10
 
-  app:
+  backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      NODE_ENV: production
-      DATABASE_URL: postgresql://filazap:filazap@postgres:5432/filazap
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/filazap
+      SPRING_DATASOURCE_USERNAME: filazap
+      SPRING_DATASOURCE_PASSWORD: filazap
       WHATSAPP_API_URL: http://whatsapp-mock:4000/graph
+      # "meta" talks to the mock above; "waha" switches to the gateway below (profile waha).
+      WHATSAPP_DRIVER: ${WHATSAPP_DRIVER:-meta}
+      WAHA_URL: http://waha:3000
+      # Chave de API WAHA (X-Api-Key) usada pelo proxy de pairing do backend. Deve ser a
+      # mesma definida abaixo em WAHA_API_KEY, senão o WAHA responde 401.
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
       MEDIA_STORAGE_DRIVER: local
-      SEED_DEMO_DATA: "true"
+      MEDIA_STORAGE_ROOT: /app/storage
+      APP_URL: http://localhost:3000
     ports:
-      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:8080:8080"
     volumes:
       # Mídia (imagens, áudios, documentos) persiste entre rebuilds do container
       - filazap_media:/app/storage
@@ -71,14 +78,71 @@ services:
         condition: service_healthy
       whatsapp-mock:
         condition: service_healthy
-    command: sh -c "npx prisma migrate deploy && npm run db:seed && npm run start"
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/login').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      # POST (o endpoint logout só aceita POST); -f faz curl falhar em HTTP >= 400.
+      test: ["CMD", "curl", "-fsS", "-X", "POST", "http://localhost:8080/api/auth/logout"]
       interval: 10s
       timeout: 5s
       retries: 12
       start_period: 20s
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      - backend
+
+  # --- WhatsApp gateway (self-hosted, paira via QR) ---
+  # Paira QUALQUE celular (personal ou Business) via QR, no Business Verification required.
+  # Fica SEMPRE no ar (sem profile) porque o fluxo de Configurações usa o proxy de pairing.
+  # Para usar a linha pairada também no envio de mensagens, reicie com:
+  #   WHATSAPP_DRIVER=waha  (no .env)  ->  docker compose up -d --no-recreate backend
+  #
+  # Image is pinned to the engine, not just the version:
+  #   arm-<ver>         WEBJS (headless Chromium) on arm64  ← default (full features)
+  #   gows-arm-<ver>    GOWS (Go, no browser) on arm64      ← much lighter, recommended
+  #   noweb-arm-<ver>   NOWEB (whatsapp-web.js) on arm64
+  #   latest-<ver>      WEBJS on amd64 — use on x86 hosts
+  # Apple Silicon (this repo's dev host) must use an -arm tag: `latest` is amd64 only.
+  waha:
+    image: ${WAHA_IMAGE:-devlikeapro/waha:arm-2026.8.2}
+    restart: unless-stopped
+    environment:
+      # Host port 3000 is taken by the frontend, so WAHA listens on 3000 internally.
+      WHATSAPP_API_PORT: 3000
+      # API key -> sent by us as `X-Api-Key` and stored per-channel (encrypted) in the
+      # accessToken column. Leave empty only to disable auth for local testing.
+      WAHA_API_KEY: ${WAHA_API_KEY:-}
+      # IMPORTANT: default is http://localhost:3000, and `media.url` in every webhook is
+      # built from it. The backend container cannot resolve "localhost" (it points at itself),
+      # so incoming media downloads would fail. Keep the container name here.
+      WAHA_BASE_URL: http://waha:3000
+      # Public link for the dashboard QR pairing flow.
+      WAHA_PUBLIC_URL: ${WAHA_PUBLIC_URL:-http://localhost:3200}
+      WAHA_DASHBOARD_USERNAME: ${WAHA_DASHBOARD_USERNAME:-waha}
+      WAHA_DASHBOARD_PASSWORD: ${WAHA_DASHBOARD_PASSWORD:-waha}
+      # Webhooks: only what the ticket model consumes. Do NOT add message.any unless you
+      # also need our own outbound echoes (the parser dedupes by message id anyway).
+      WHATSAPP_HOOK_URL: http://backend:8080/api/webhooks/whatsapp
+      WHATSAPP_HOOK_EVENTS: message,message.ack
+      # Must equal the channel's webhook secret (WAHA_WEBHOOK_SECRET), otherwise every
+      # webhook is rejected with 401 and no ticket is ever created.
+      WHATSAPP_HOOK_HMAC_KEY: ${WAHA_WEBHOOK_SECRET:-}
+      TZ: ${TZ:-UTC}
+    ports:
+      # Host port 3000 (frontend) e 3001 (tiktoklivemonitor) já são usados;
+      # o dashboard WAHA fica em 3200. O fluxo de QR do frontend usa o proxy do
+      # backend (waha:3000 interno), então esta porta host é só acesso manual.
+      - "127.0.0.1:3200:3000"
+    volumes:
+      # Session state. Without this the QR must be rescanned on every restart.
+      - waha_sessions:/app/.sessions
+
 volumes:
   filazap_pgdata:
   filazap_media:
+  waha_sessions:
