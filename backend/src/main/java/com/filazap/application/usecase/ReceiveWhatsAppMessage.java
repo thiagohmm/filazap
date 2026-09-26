@@ -120,15 +120,17 @@ public class ReceiveWhatsAppMessage {
             throw new ChannelNotFoundError(phoneNumberId == null ? "desconhecido" : phoneNumberId);
         }
 
-        PhoneNumberE164 phone = PhoneNumberE164.create(message.from());
+        WhatsAppIdentity identity = resolveIdentity(channel, message.from());
+        PhoneNumberE164 phone = identity.phone();
         Contact contact = contacts.findByChannelAndPhone(channel.getOrganizationId(),
                 channel.getId(), phone.e164());
         boolean isNewContact = contact == null;
         if (isNewContact) {
             contact = Contact.create(idGenerator.generate(), channel.getOrganizationId(),
-                    channel.getId(), phone, messageTimestamp, messageTimestamp);
+                    channel.getId(), phone, messageTimestamp, messageTimestamp)
+                    .withWhatsappJid(identity.jid());
         } else {
-            contact = contact.withLastContactAt(messageTimestamp);
+            contact = contact.withLastContactAt(messageTimestamp).withWhatsappJid(identity.jid());
         }
         contacts.save(contact);
 
@@ -162,6 +164,10 @@ public class ReceiveWhatsAppMessage {
                 type = mapMediaTypeName(message.type());
             }
         }
+        // Location tem type próprio e não é mídia (sem mediaId): mapeia direto.
+        if ("location".equals(message.type())) {
+            type = "LOCATION";
+        }
 
         Message record = Message.create(idGenerator.generate(), channel.getOrganizationId(),
                 ticket.getId(), contact.getId(), message.whatsappMessageId(),
@@ -170,12 +176,51 @@ public class ReceiveWhatsAppMessage {
         messages.save(record);
     }
 
+    private record WhatsAppIdentity(PhoneNumberE164 phone, String jid) {
+    }
+
+    /**
+     * Decide o telefone (identidade/exibição) e o JID canônico (destino do envio).
+     *
+     * <p>Contatos que chegam como {@code @lid} não trazem número de telefone. Tentamos resolver
+     * na agenda do celular pareado via WAHA; sem sucesso, guardamos o próprio {@code @lid} como
+     * destino, pois o WAHA aceita enviar para LIDs (evita resposta indo para número inexistente).
+     */
+    private WhatsAppIdentity resolveIdentity(WhatsAppChannel channel, String from) {
+        if (from != null && from.endsWith("@lid")) {
+            String resolved = resolveLid(channel, from);
+            if (resolved != null && !resolved.isBlank()) {
+                String digits = resolved.replaceAll("[^0-9]", "");
+                return new WhatsAppIdentity(PhoneNumberE164.create(digits), digits + "@c.us");
+            }
+            return new WhatsAppIdentity(PhoneNumberE164.create(from), from);
+        }
+        PhoneNumberE164 phone = PhoneNumberE164.create(from);
+        return new WhatsAppIdentity(phone, phone.e164().replaceAll("[^0-9]", "") + "@c.us");
+    }
+
+    private String resolveLid(WhatsAppChannel channel, String lid) {
+        if (channel.getAccessTokenEncrypted() == null) {
+            return null;
+        }
+        try {
+            String token = cipher.decrypt(channel.getAccessTokenEncrypted());
+            return gateway.resolveLid(new WhatsAppGateway.ChannelRef(
+                    channel.getPhoneNumberId(), token, channel.getApiBaseUrl()), lid);
+        } catch (Exception error) {
+            logger.log("warn", "webhook.lid_resolve_failed", Json.obj(
+                    "lid", lid, "error", error.getMessage() == null ? "unknown" : error.getMessage()));
+            return null;
+        }
+    }
+
     private String mapMediaTypeName(String providerType) {
         return switch (providerType) {
             case "image" -> "IMAGE";
             case "audio" -> "AUDIO";
             case "video" -> "VIDEO";
             case "document" -> "DOCUMENT";
+            case "location" -> "LOCATION";
             case "text" -> "TEXT";
             default -> "DOCUMENT";
         };

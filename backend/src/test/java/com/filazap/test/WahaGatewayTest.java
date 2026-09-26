@@ -6,6 +6,7 @@ import com.filazap.infrastructure.whatsapp.WahaWhatsAppGateway;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -33,6 +34,20 @@ class WahaGatewayTest {
         assertEquals("5511999990001@c.us", WahaWhatsAppGateway.chatId("5511999990001@c.us"));
         // Group JIDs are accepted at this layer; the parser is what drops group inbound.
         assertEquals("1112223333@g.us", WahaWhatsAppGateway.chatId("1112223333@g.us"));
+    }
+
+    @Test
+    void passesThroughLidJidsSoRepliesReachLidOnlyContacts() {
+        // Contacts without a resolvable phone are stored as @lid; WAHA must receive the LID
+        // untouched, otherwise the reply silently goes to a non-existent @c.us number.
+        assertEquals("37048606048491@lid", WahaWhatsAppGateway.chatId("37048606048491@lid"));
+    }
+
+    @Test
+    void resolveLidIgnoresNonLidIdentifiersWithoutTouchingTheNetwork() {
+        assertNull(gateway.resolveLid(channel(), "+5511999990001"));
+        assertNull(gateway.resolveLid(channel(), "5511999990001@c.us"));
+        assertNull(gateway.resolveLid(channel(), null));
     }
 
     @Test

@@ -3,6 +3,7 @@ package com.filazap.domain.entity;
 import com.filazap.domain.valueobject.PhoneNumberE164;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.Map;
 
 public class Contact {
@@ -68,5 +69,20 @@ public class Contact {
     public Contact withLastContactAt(Instant newLastContactAt) {
         return new Contact(id, organizationId, channelId, phoneE164, name, metadata,
                 firstContactAt, newLastContactAt, createdAt, updatedAt);
+    }
+
+    /**
+     * Guarda o JID canônico usado para enviar mensagens (ex.: {@code 5511...@c.us} ou
+     * {@code 123...@lid}). Necessário porque o WhatsApp pode identificar o contato por um LID
+     * sem número de telefone associado.
+     */
+    public Contact withWhatsappJid(String jid) {
+        if (jid == null || jid.isBlank()) {
+            return this;
+        }
+        Map<String, Object> next = metadata == null ? new HashMap<>() : new HashMap<>(metadata);
+        next.put("whatsappJid", jid);
+        return new Contact(id, organizationId, channelId, phoneE164, name, next,
+                firstContactAt, lastContactAt, createdAt, updatedAt);
     }
 }

@@ -412,6 +412,10 @@ input::placeholder { color: #9aa5b5; }
 .media-card-audio .media-kind { width: 34px; height: 34px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: var(--primary); color: #fff; }
 .media-card-audio audio { min-width: 0; width: 155px; height: 34px; margin: 0; }
 .media-card-document { display: flex; align-items: center; gap: 8px; padding: 8px; }
+.media-card-video { width: min(280px,64vw); background: #000; }
+.media-card-video video { display: block; width: 100%; height: auto; max-height: 320px; background: #000; }
+.media-card-video .media-download { position: absolute; right: 8px; bottom: 8px; border-color: rgba(255,255,255,.55); background: rgba(18,27,37,.78); color: #fff; backdrop-filter: blur(5px); }
+.media-card-location { display: flex; align-items: center; gap: 8px; padding: 8px; }
 .document-preview { min-width: 0; display: flex; flex: 1; align-items: center; gap: 9px; color: var(--text); }
 .document-icon { width: 46px; height: 46px; display: grid; place-items: center; flex: 0 0 auto; border-radius: 8px; background: color-mix(in srgb,var(--primary) 12%,var(--surface)); color: var(--primary); }
 .document-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }

@@ -66,7 +66,12 @@ public class MediaController {
                                    @PathVariable("storedPath") String storedPath,
                                    @RequestParam(value = "download", required = false) String download) {
         requireMembership(organizationId);
+        // O catch-all {*storedPath} do Spring captura a barra inicial; sem removê-la o
+        // startsWith abaixo falha e todo arquivo responde 400.
         String normalized = storedPath.replace("\\", "/");
+        while (normalized.startsWith("/")) {
+            normalized = normalized.substring(1);
+        }
         if (!normalized.startsWith("media/" + organizationId + "/")
                 || normalized.contains("..") || normalized.contains("\0")) {
             throw new BadRequestException("Caminho inválido.");
@@ -111,6 +116,7 @@ public class MediaController {
         double size = sizeObj instanceof Number n ? n.doubleValue() : 0;
 
         boolean allowed = normalizedMime.startsWith("image/") || normalizedMime.startsWith("audio/")
+                || normalizedMime.startsWith("video/")
                 || DOCUMENT_MIMES.contains(normalizedMime);
         if (filename == null || filename.trim().isEmpty() || !allowed || size <= 0) {
             throw new BadRequestException("Arquivo inválido ou não suportado.");

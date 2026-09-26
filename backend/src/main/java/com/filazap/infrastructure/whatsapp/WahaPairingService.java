@@ -64,7 +64,7 @@ public class WahaPairingService {
         }
         String name = sessionName.trim();
         Res r = doRequest(createUrl(), "POST",
-                Map.of("Content-Type", "application/json", "X-Api-Key", apiKeyOrNull()),
+                headers("application/json"),
                 json("name", name, "start", true).getBytes(StandardCharsets.UTF_8), 60);
         // 201 = criada; 400/409/422 = já existe (WAHA usa 422: "already exists. Use PUT")
         // — em ambos os casos servimos o QR.
@@ -83,7 +83,7 @@ public class WahaPairingService {
      */
     public byte[] getQr(String sessionName) {
         ensureSession(sessionName);
-        Res r = doRequest(qrUrl(sessionName), "GET", Map.of("X-Api-Key", apiKeyOrNull()), null, 30);
+        Res r = doRequest(qrUrl(sessionName), "GET", headers(null), null, 30);
         if (r.status() >= 200 && r.status() < 300) {
             return r.body();
         }
@@ -118,7 +118,7 @@ public class WahaPairingService {
         JsonNode me = node.get("me");
         boolean connected = "CONNECTED".equalsIgnoreCase(status)
                 || "CONNECTED".equalsIgnoreCase(state)
-                || (me != null && me.isObject() && !me.get("phone").isNull());
+                || (me != null && me.isObject() && me.hasNonNull("phone"));
         out.put("status", status);
         out.put("state", state);
         out.put("connected", connected);
@@ -128,7 +128,7 @@ public class WahaPairingService {
 
     /** Encerra a sessão (despaira) — usada pelo botão "Desconectar". */
     public void logout(String sessionName) {
-        Res r = doRequest(logoutUrl(sessionName), "POST", Map.of("X-Api-Key", apiKeyOrNull()), null, 15);
+        Res r = doRequest(logoutUrl(sessionName), "POST", headers(null), null, 15);
         if (r.status() < 200 || r.status() >= 500) {
             throw new WahaPairingException("WAHA logout HTTP " + r.status() + ": " + bodyText(r.body()));
         }
@@ -195,11 +195,27 @@ public class WahaPairingService {
     }
 
     /**
+     * Cabeçalhos da request ao WAHA. {@code Map.of} rejeita valores nulos, então a
+     * {@code X-Api-Key} só entra quando configurada (WAHA sem auth em dev).
+     */
+    private Map<String, String> headers(String contentType) {
+        Map<String, String> headers = new LinkedHashMap<>();
+        if (contentType != null) {
+            headers.put("Content-Type", contentType);
+        }
+        String key = apiKeyOrNull();
+        if (key != null) {
+            headers.put("X-Api-Key", key);
+        }
+        return headers;
+    }
+
+    /**
      * GET da sessão: devolve o body JSON ou {@code null} quando a sessão ainda não existe
      * (404/422) — assim o poll de status não re-inicia a sessão a cada chamada.
      */
     private String getSessionRaw(String sessionName) {
-        Res r = doRequest(sessionUrl(sessionName), "GET", Map.of("X-Api-Key", apiKeyOrNull()), null, 15);
+        Res r = doRequest(sessionUrl(sessionName), "GET", headers(null), null, 15);
         if (r.status() >= 200 && r.status() < 300) {
             return new String(r.body(), StandardCharsets.UTF_8);
         }

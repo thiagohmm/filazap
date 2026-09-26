@@ -5,12 +5,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.filazap.application.port.WhatsAppGateway;
 import com.filazap.domain.error.SendMessageFailedError;
 
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
-import java.time.Duration;
 import java.util.Base64;
 import java.util.UUID;
 
@@ -49,9 +48,6 @@ public class WahaWhatsAppGateway implements WhatsAppGateway {
 
     private final String defaultBaseUrl;
     private final boolean convertVoice;
-    private final HttpClient http = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(15))
-            .build();
     private final ObjectMapper mapper = new ObjectMapper();
 
     public WahaWhatsAppGateway(String defaultBaseUrl, boolean convertVoice) {
@@ -124,6 +120,28 @@ public class WahaWhatsAppGateway implements WhatsAppGateway {
     }
 
     // ---- helpers ----
+
+    @Override
+    public String resolveLid(ChannelRef channel, String lid) {
+        if (lid == null || !lid.endsWith("@lid")) return null;
+        String id = lid.substring(0, lid.length() - "@lid".length());
+        String url = api(channel, "/api/" + session(channel) + "/lids/" + id);
+        try {
+            Res r = doRequest(url, "GET", apiKey(channel), null, 30);
+            if (r.status() < 200 || r.status() >= 300) return null;
+            JsonNode node = mapper.readTree(r.body());
+            JsonNode pn = node == null ? null : node.get("pn");
+            if (pn == null || pn.isNull()) return null;
+            String value = pn.asText(null);
+            if (value == null || value.isBlank()) return null;
+            int at = value.indexOf('@');
+            String digits = (at >= 0 ? value.substring(0, at) : value).replaceAll("[^0-9]", "");
+            return digits.isEmpty() ? null : digits;
+        } catch (Exception e) {
+            // Sem número na agenda (ou API indisponível): o chamador responde usando o @lid.
+            return null;
+        }
+    }
 
     private String session(ChannelRef channel) {
         if (channel.phoneNumberId() == null || channel.phoneNumberId().isBlank()) {
@@ -211,51 +229,72 @@ public class WahaWhatsAppGateway implements WhatsAppGateway {
         return "waha-local-" + UUID.randomUUID();
     }
 
+    private record Res(int status, byte[] body) {
+    }
+
     private JsonNode postJson(String url, String wahaApiKey, String body) {
-        String raw = exchange(jsonRequest(url, wahaApiKey, body), url,
-                HttpResponse.BodyHandlers.ofString());
-        try {
-            return mapper.readTree(raw);
-        } catch (Exception e) {
-            throw new SendMessageFailedError("WAHA returned a response that is not JSON: " + url);
+        Res r = doRequest(url, "POST", wahaApiKey, body.getBytes(StandardCharsets.UTF_8), 30);
+        if (r.status() < 200 || r.status() >= 300) {
+            throw new SendMessageFailedError(
+                    "WAHA " + url + " → HTTP " + r.status() + ": " + bodyText(r.body()));
         }
-    }
-
-    private HttpRequest jsonRequest(String url, String wahaApiKey, String body) {
-        return HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(30))
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
-                .header("X-Api-Key", wahaApiKey)
-                .POST(HttpRequest.BodyPublishers.ofString(body, StandardCharsets.UTF_8))
-                .build();
-    }
-
-    private <T> T exchange(HttpRequest request, String url,
-                           HttpResponse.BodyHandler<T> handler) {
-        try {
-            HttpResponse<T> response = http.send(request, handler);
-            int status = response.statusCode();
-            if (status < 200 || status >= 300) {
-                throw new SendMessageFailedError(
-                        "WAHA " + url + " → HTTP " + status + ": " + bodyText(response.body()));
-            }
-            return response.body();
-        } catch (SendMessageFailedError e) {
-            throw e;
-        } catch (InterruptedException e) {
-            throw new SendMessageFailedError("request to WAHA interrupted: " + url);
-        } catch (Exception e) {
-            throw new SendMessageFailedError("network failure talking to WAHA: " + e.getMessage());
-        }
+        return parseJson(r.body(), url);
     }
 
     private byte[] getBytes(String url, String wahaApiKey) {
-        HttpRequest request = HttpRequest.newBuilder(URI.create(url))
-                .timeout(Duration.ofSeconds(60))
-                .header("X-Api-Key", wahaApiKey)
-                .GET().build();
-        return exchange(request, url, HttpResponse.BodyHandlers.ofByteArray());
+        Res r = doRequest(url, "GET", wahaApiKey, null, 60);
+        if (r.status() < 200 || r.status() >= 300) {
+            throw new SendMessageFailedError(
+                    "WAHA " + url + " → HTTP " + r.status() + ": " + bodyText(r.body()));
+        }
+        return r.body();
+    }
+
+    /**
+     * Request HTTP via {@link HttpURLConnection}. O {@code java.net.http.HttpClient} não fala
+     * com o WAHA (devolve {@code HTTP/1.1 header parser received no bytes}), então usamos a
+     * mesma transport do {@link WahaPairingService}.
+     */
+    private Res doRequest(String url, String method, String wahaApiKey, byte[] body, int timeoutSec) {
+        HttpURLConnection conn = null;
+        try {
+            conn = (HttpURLConnection) new URI(url).toURL().openConnection();
+            conn.setRequestMethod(method);
+            conn.setConnectTimeout(timeoutSec * 1000);
+            conn.setReadTimeout(timeoutSec * 1000);
+            conn.setInstanceFollowRedirects(false);
+            conn.setRequestProperty("X-Api-Key", wahaApiKey);
+            if (body != null) {
+                conn.setRequestProperty("Content-Type", "application/json");
+                conn.setRequestProperty("Accept", "application/json");
+                conn.setDoOutput(true);
+                conn.setFixedLengthStreamingMode(body.length);
+                try (OutputStream os = conn.getOutputStream()) {
+                    os.write(body);
+                }
+            }
+            int status = conn.getResponseCode();
+            InputStream is = (status >= 200 && status < 300)
+                    ? conn.getInputStream() : conn.getErrorStream();
+            byte[] resp = is == null ? new byte[0] : is.readAllBytes();
+            return new Res(status, resp);
+        } catch (SendMessageFailedError e) {
+            throw e;
+        } catch (Exception e) {
+            throw new SendMessageFailedError("network failure talking to WAHA: " + e.getMessage());
+        } finally {
+            if (conn != null) {
+                conn.disconnect();
+            }
+        }
+    }
+
+    private JsonNode parseJson(byte[] body, String url) {
+        try {
+            return mapper.readTree(body);
+        } catch (Exception e) {
+            throw new SendMessageFailedError("WAHA returned a response that is not JSON: " + url);
+        }
     }
 
     private String bodyText(Object body) {

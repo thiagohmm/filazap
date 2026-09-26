@@ -7,7 +7,6 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.stereotype.Repository;
 
-import java.time.Instant;
 import java.util.List;
 
 @Repository
@@ -46,8 +45,8 @@ public class JdbcContactRepository implements ContactRepository {
                 .addValue("phoneE164", contact.getPhoneE164())
                 .addValue("name", contact.getName())
                 .addValue("metadata", JsonCodec.toJson(contact.getMetadata()))
-                .addValue("firstContactAt", contact.getFirstContactAt())
-                .addValue("lastContactAt", contact.getLastContactAt());
+                .addValue("firstContactAt", Params.instant(contact.getFirstContactAt()))
+                .addValue("lastContactAt", Params.instant(contact.getLastContactAt()));
         return jdbc.queryForObject(sql, params, MAPPER);
     }
 
@@ -89,6 +88,6 @@ public class JdbcContactRepository implements ContactRepository {
                 (rs, i) -> new ContactSearchResult(
                         MAPPER.mapRow(rs, i),
                         rs.getInt("totalTickets"),
-                        (Instant) rs.getObject("lastMessageAt", Instant.class)));
+                        Rows.ts(rs, "lastMessageAt")));
     }
 }

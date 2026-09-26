@@ -63,7 +63,7 @@ public class WahaWhatsAppWebhookParser implements WhatsAppWebhookParser {
                             from,
                             epochSeconds(body.get("timestamp")),
                             deriveType(body),
-                            str(body.get("body")),
+                            bodyOf(body),
                             mediaIdOf(body)));
                 }
             }
@@ -87,6 +87,7 @@ public class WahaWhatsAppWebhookParser implements WhatsAppWebhookParser {
      * use case stores the row without a file (see ReceiveWhatsAppMessage.downloadMedia).
      */
     private String deriveType(Map<?, ?> body) {
+        if (isLocation(body)) return "location";
         if (!truthy(body.get("hasMedia"))) return "text";
         Map<?, ?> media = asMap(body.get("media"));
         String mimetype = media == null ? null : str(media.get("mimetype"));
@@ -97,8 +98,31 @@ public class WahaWhatsAppWebhookParser implements WhatsAppWebhookParser {
         return "document";
     }
 
+    /**
+     * Location messages carry the coordinates in {@code payload.location} and put the map
+     * thumbnail as base64 in {@code payload.body} — storing that raw would blow up the row.
+     * We replace it with a Google Maps link so the UI can render it.
+     */
+    private String bodyOf(Map<?, ?> body) {
+        Map<?, ?> location = asMap(body.get("location"));
+        if (location != null) {
+            Object latitude = location.get("latitude");
+            Object longitude = location.get("longitude");
+            if (latitude != null && longitude != null) {
+                return "https://www.google.com/maps?q=" + latitude + "," + longitude;
+            }
+        }
+        return str(body.get("body"));
+    }
+
+    private boolean isLocation(Map<?, ?> body) {
+        Map<?, ?> location = asMap(body.get("location"));
+        return location != null && location.get("latitude") != null && location.get("longitude") != null;
+    }
+
     /** The absolute media URL is the mediaId for WAHA (no upload ids exist). */
     private String mediaIdOf(Map<?, ?> body) {
+        if (isLocation(body)) return null;
         if (!truthy(body.get("hasMedia"))) return null;
         Object media = body.get("media");
         if (!(media instanceof Map<?, ?> m)) return null;
@@ -110,6 +134,10 @@ public class WahaWhatsAppWebhookParser implements WhatsAppWebhookParser {
      *
      * <p>Group messages ({@code @g.us}) are dropped rather than collapsed to a bogus phone
      * number: the ticket model here is one contact per conversation.
+     *
+     * <p>{@code @lid} (Linked ID) is kept with its domain: it carries no phone number, so the
+     * use case must resolve it via the gateway (or reply to the LID itself) — collapsing it to
+     * bare digits would store a fake phone number and break replies.
      */
     private String normalizeJid(Object value) {
         String jid = str(value);
@@ -119,6 +147,7 @@ public class WahaWhatsAppWebhookParser implements WhatsAppWebhookParser {
         String local = jid.substring(0, at);
         String domain = jid.substring(at + 1);
         if ("g.us".equals(domain)) return null;
+        if ("lid".equals(domain)) return local + "@lid";
         return local;
     }
 

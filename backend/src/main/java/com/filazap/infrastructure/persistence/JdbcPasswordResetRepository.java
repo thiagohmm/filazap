@@ -32,8 +32,8 @@ public class JdbcPasswordResetRepository implements PasswordResetRepository {
                 .addValue("id", token.id())
                 .addValue("userId", token.userId())
                 .addValue("tokenHash", token.tokenHash())
-                .addValue("expiresAt", token.expiresAt())
-                .addValue("createdAt", token.createdAt()));
+                .addValue("expiresAt", Params.instant(token.expiresAt()))
+                .addValue("createdAt", Params.instant(token.createdAt())));
     }
 
     @Override
@@ -43,7 +43,7 @@ public class JdbcPasswordResetRepository implements PasswordResetRepository {
         List<Object[]> rows = jdbc.query(findSql, new MapSqlParameterSource("tokenHash", tokenHash),
                 (rs, i) -> new Object[]{
                         rs.getString("id"), rs.getString("userId"),
-                        rs.getObject("usedAt", Instant.class), rs.getObject("expiresAt", Instant.class)});
+                        Rows.ts(rs, "usedAt"), Rows.ts(rs, "expiresAt")});
         if (rows.isEmpty()) return false;
 
         String tokenId = (String) rows.get(0)[0];
@@ -56,7 +56,7 @@ public class JdbcPasswordResetRepository implements PasswordResetRepository {
                 UPDATE "PasswordResetToken" SET "usedAt" = :now
                 WHERE id = :id AND "usedAt" IS NULL AND "expiresAt" > :now""";
         int consumed = jdbc.update(consumeSql, new MapSqlParameterSource()
-                .addValue("id", tokenId).addValue("now", now));
+                .addValue("id", tokenId).addValue("now", Params.instant(now)));
         if (consumed != 1) return false;
 
         String updateUser = "UPDATE \"User\" SET \"passwordHash\" = :passwordHash WHERE id = :userId";

@@ -51,7 +51,7 @@ public class JdbcMessageRepository implements MessageRepository {
                 .addValue("mediaPath", message.getMediaPath())
                 .addValue("senderUserId", message.getSenderUserId())
                 .addValue("providerStatus", message.getProviderStatus())
-                .addValue("providerTimestamp", message.getProviderTimestamp());
+                .addValue("providerTimestamp", Params.instant(message.getProviderTimestamp()));
         return jdbc.queryForObject(sql, params, MAPPER);
     }
 

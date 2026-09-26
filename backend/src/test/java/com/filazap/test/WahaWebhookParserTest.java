@@ -197,6 +197,40 @@ class WahaWebhookParserTest {
         assertTrue(parsed.messages() instanceof List);
     }
 
+    @Test
+    void mapsLocationPayloadToAMapsLinkInsteadOfTheBase64ThumbnailBody() {
+        var parsed = parser.parse(envelope("message", "s", m(
+                "id", "false_37048606048491@lid_LOC",
+                "timestamp", 1790398952,
+                "from", "37048606048491@lid",
+                "fromMe", false,
+                // WAHA puts the map thumbnail as base64 in `body`; it must not be stored raw.
+                "body", "/9j/4AAQSkZJRgABAQAASABIAAD",
+                "hasMedia", false,
+                "location", m("latitude", -23.591981887817383, "longitude", -46.5746955871582))));
+
+        var msg = parsed.messages().get(0);
+        assertEquals("location", msg.type());
+        assertEquals("https://www.google.com/maps?q=-23.591981887817383,-46.5746955871582",
+                msg.body());
+        assertNull(msg.mediaId());
+    }
+
+    @Test
+    void keepsLidDomainSoTheUseCaseCanResolveItInsteadOfStoringABogusPhone() {
+        var parsed = parser.parse(envelope("message", "s", m(
+                "id", "false_37048606048491@lid_AAAA",
+                "timestamp", 1667561485,
+                "from", "37048606048491@lid",
+                "fromMe", false,
+                "body", "oi",
+                "hasMedia", false)));
+
+        assertEquals(1, parsed.messages().size());
+        // The @lid is preserved so the use case resolves it (or replies to the LID itself).
+        assertEquals("37048606048491@lid", parsed.messages().get(0).from());
+    }
+
     // ---- WAHA HMAC (sha512, X-Webhook-Hmac) ----
 
     private static String hmacSha512(String secret, String body) {

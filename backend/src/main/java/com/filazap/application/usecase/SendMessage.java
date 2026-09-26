@@ -12,6 +12,7 @@ import com.filazap.application.port.TicketRepository;
 import com.filazap.application.port.WhatsAppChannelRepository;
 import com.filazap.application.port.WhatsAppGateway;
 import com.filazap.application.util.Json;
+import com.filazap.domain.entity.Contact;
 import com.filazap.domain.entity.Message;
 import com.filazap.domain.entity.Ticket;
 import com.filazap.domain.entity.TicketEvent;
@@ -94,7 +95,8 @@ public class SendMessage {
 
         boolean isImage = media != null && media.mimeType() != null && media.mimeType().startsWith("image/");
         boolean isAudio = media != null && media.mimeType() != null && media.mimeType().startsWith("audio/");
-        String mediaType = isImage ? "image" : isAudio ? "audio" : "document";
+        boolean isVideo = media != null && media.mimeType() != null && media.mimeType().startsWith("video/");
+        String mediaType = isImage ? "image" : isAudio ? "audio" : isVideo ? "video" : "document";
 
         if (canReplyToAny && (ticket.getStatus() == TicketStatus.WAITING
                 || ticket.getStatus() == TicketStatus.RETURNING)) {
@@ -130,20 +132,21 @@ public class SendMessage {
         var channelRef = new WhatsAppGateway.ChannelRef(channel.getPhoneNumberId(), accessToken);
 
         WhatsAppGateway.SendMessageResult result;
+        String destination = destinationOf(contact);
         if (media != null) {
             byte[] fileData = mediaStorage.read(media.storedPath());
             var uploaded = gateway.uploadMedia(new WhatsAppGateway.UploadMediaCommand(
                     channelRef, fileData, media.mimeType(), media.filename()));
             result = gateway.sendMedia(new WhatsAppGateway.SendMediaCommand(
-                    channelRef, contact.getPhoneE164(), uploaded.fileId(), media.mimeType(),
-                    media.filename(), media.caption(), mediaType));
+                    channelRef, destination, uploaded.fileId(), media.mimeType(),
+                    media.filename(), media.caption(), mediaType, fileData));
         } else {
             result = gateway.sendText(new WhatsAppGateway.SendMessageCommand(
-                    channelRef, contact.getPhoneE164(), "TEXT", body));
+                    channelRef, destination, "TEXT", body));
         }
 
         String type = media != null
-                ? (isAudio ? "AUDIO" : isImage ? "IMAGE" : "DOCUMENT")
+                ? (isAudio ? "AUDIO" : isImage ? "IMAGE" : isVideo ? "VIDEO" : "DOCUMENT")
                 : "TEXT";
         String messageBody = media != null ? media.caption() : (body == null || body.isEmpty() ? null : body);
 
@@ -168,5 +171,17 @@ public class SendMessage {
                 "mediaPath", message.getMediaPath(),
                 "providerStatus", message.getProviderStatus(),
                 "createdAt", message.getCreatedAt()));
+    }
+
+    /**
+     * Destino do envio: o JID canônico guardado no metadata do contato (ex.: {@code ...@lid}
+     * quando o WhatsApp não expõe o número) ou, na ausência dele, o telefone E.164.
+     */
+    private static String destinationOf(Contact contact) {
+        Map<String, Object> metadata = contact.getMetadata();
+        if (metadata != null && metadata.get("whatsappJid") instanceof String jid && !jid.isBlank()) {
+            return jid;
+        }
+        return contact.getPhoneE164();
     }
 }

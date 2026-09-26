@@ -7,6 +7,7 @@ import {
   Download,
   FileText,
   Image as ImageIcon,
+  MapPin,
   Mic,
   MessageSquarePlus,
   Paperclip,
@@ -59,6 +60,13 @@ type Message = {
   mediaPath: string | null;
   createdAt: string;
 };
+
+/** Evita re-render/scroll a cada poll quando a lista de mensagens não mudou. */
+function sameMessages(a: Message[], b: Message[]): boolean {
+  if (a.length !== b.length) return false;
+  if (a.length === 0) return true;
+  return a[a.length - 1]?.id === b[b.length - 1]?.id;
+}
 
 type SearchResult = {
   id: string;
@@ -210,17 +218,12 @@ export default function AtendimentoPage() {
   const loadAll = useCallback(async () => {
     if (!session || !selectedOrg) return;
     const headers = { Authorization: `Bearer ${session.token}` };
+    const base = `/api/organizations/${selectedOrg.id}`;
     try {
       const [q, c, m] = await Promise.all([
-        fetch(`/api/organizations/${selectedOrg.id}/tickets`, { headers }).then((r) =>
-          r.json()
-        ),
-        fetch(`/api/organizations/${selectedOrg.id}/tickets/counters`, { headers }).then(
-          (r) => r.json()
-        ),
-        fetch(`/api/organizations/${selectedOrg.id}/metrics`, { headers }).then((r) =>
-          r.json()
-        )
+        fetch(`${base}/tickets`, { headers }).then((r) => r.json()),
+        fetch(`${base}/tickets/counters`, { headers }).then((r) => r.json()),
+        fetch(`${base}/metrics`, { headers }).then((r) => r.json())
       ]);
       if (q.queue) setQueue(q.queue);
       if (c.waiting !== undefined) setCounters(c);
@@ -228,7 +231,21 @@ export default function AtendimentoPage() {
     } catch {
       // polling continua; sem erro fatal
     }
-  }, [session, selectedOrg]);
+    // A conversa aberta também precisa do polling: sem isso, mensagens novas só aparecem
+    // ao trocar de ticket ou recarregar a página.
+    if (selectedTicketId) {
+      try {
+        const msgs = await fetch(`${base}/tickets/${selectedTicketId}/messages`, {
+          headers
+        }).then((r) => r.json());
+        if (msgs.messages) {
+          setMessages((prev) => (sameMessages(prev, msgs.messages) ? prev : msgs.messages));
+        }
+      } catch {
+        // ignora falha transitória; o próximo ciclo tenta novamente
+      }
+    }
+  }, [session, selectedOrg, selectedTicketId]);
 
   useEffect(() => {
     if (!session || !selectedOrg) return;
@@ -401,11 +418,14 @@ export default function AtendimentoPage() {
 
   const mediaUrl = useCallback(
     (mediaPath: string | null, download = false) => {
-      if (!selectedOrg || !mediaPath) return '';
+      if (!selectedOrg || !mediaPath || !session) return '';
       const base = `/api/organizations/${selectedOrg.id}/media/${mediaPath}`;
-      return download ? `${base}?download=1` : base;
+      // <img>/<audio>/<a> não enviam Authorization; o backend aceita o JWT via ?token= em /media/.
+      const params = new URLSearchParams({ token: session.token });
+      if (download) params.set('download', '1');
+      return `${base}?${params.toString()}`;
     },
-    [selectedOrg]
+    [selectedOrg, session]
   );
 
   function pickAttachFile() {
@@ -875,7 +895,23 @@ export default function AtendimentoPage() {
                         </a>
                       </div>
                     )}
-                    {m.mediaPath && m.type !== 'IMAGE' && m.type !== 'AUDIO' && (
+                    {m.mediaPath && m.type === 'VIDEO' && (
+                      <div className="media-card media-card-video">
+                        <video controls preload="metadata" src={mediaUrl(m.mediaPath)} />
+                        <a className="media-download" href={mediaUrl(m.mediaPath, true)} download title="Baixar vídeo" aria-label="Baixar vídeo">
+                          <Download size={16} />
+                        </a>
+                      </div>
+                    )}
+                    {m.type === 'LOCATION' && m.body && (
+                      <div className="media-card media-card-location">
+                        <a className="document-preview" href={m.body} target="_blank" rel="noopener noreferrer">
+                          <span className="document-icon"><MapPin size={30} /></span>
+                          <span className="document-copy"><strong>Localização</strong><small>Abrir no mapa</small></span>
+                        </a>
+                      </div>
+                    )}
+                    {m.mediaPath && m.type !== 'IMAGE' && m.type !== 'AUDIO' && m.type !== 'VIDEO' && (
                       <div className="media-card media-card-document">
                         <a className="document-preview" href={mediaUrl(m.mediaPath)} target="_blank" rel="noopener noreferrer">
                           <span className="document-icon"><FileText size={30} /></span>
@@ -886,7 +922,7 @@ export default function AtendimentoPage() {
                         </a>
                       </div>
                     )}
-                    {m.body && m.type !== 'DOCUMENT' && <span className="media-caption">{m.body}</span>}
+                    {m.body && m.type !== 'DOCUMENT' && m.type !== 'LOCATION' && <span className="media-caption">{m.body}</span>}
                     <span className="bubble-time">{formatTime(m.createdAt)}</span>
                   </div>
                 ))}
@@ -936,7 +972,7 @@ export default function AtendimentoPage() {
                 <input
                   ref={fileInputRef}
                   type="file"
-                  accept="image/*,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                  accept="image/*,video/*,audio/*,application/pdf,text/plain,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                   onChange={handlePickFile}
                   style={{ display: 'none' }}
                 />

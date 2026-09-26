@@ -47,8 +47,8 @@ public class JdbcWebhookEventRepository implements WebhookEventRepository {
                 .addValue("payload", JsonCodec.toJson(event.getPayload()))
                 .addValue("processingStatus", event.getProcessingStatus().name())
                 .addValue("attempts", event.getAttempts())
-                .addValue("receivedAt", event.getReceivedAt())
-                .addValue("processedAt", event.getProcessedAt())
+                .addValue("receivedAt", Params.instant(event.getReceivedAt()))
+                .addValue("processedAt", Params.instant(event.getProcessedAt()))
                 .addValue("errorMessage", event.getErrorMessage());
         return jdbc.queryForObject(sql, params, MAPPER);
     }

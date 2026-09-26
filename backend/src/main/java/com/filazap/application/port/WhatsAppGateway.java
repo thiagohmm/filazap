@@ -68,4 +68,15 @@ public interface WhatsAppGateway {
     SendMessageResult sendMedia(SendMediaCommand command);
 
     FetchMediaResult fetchMedia(FetchMediaCommand command);
+
+    /**
+     * Resolve um {@code @lid} (Linked ID do WhatsApp) para o telefone E.164 (somente dígitos).
+     *
+     * <p>O WAHA só consegue resolver quando o contato está na agenda do celular pareado; caso
+     * contrário devolve {@code null} e o chamador deve responder usando o próprio {@code @lid}.
+     * Adapters que não usam LID (Meta) mantêm o default {@code null}.
+     */
+    default String resolveLid(ChannelRef channel, String lid) {
+        return null;
+    }
 }

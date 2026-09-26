@@ -32,14 +32,14 @@ public class JdbcTeamChatRepository implements TeamChatRepository {
                   "lastSeenAt" = EXCLUDED."lastSeenAt"
                 """;
         jdbc.update(sql, new MapSqlParameterSource()
-                .addValue("organizationId", organizationId).addValue("userId", userId).addValue("now", now));
+                .addValue("organizationId", organizationId).addValue("userId", userId).addValue("now", Params.instant(now)));
     }
 
     @Override
     public List<String> listOnlineUserIds(String organizationId, Instant since) {
         String sql = "SELECT \"userId\" FROM \"TeamPresence\" WHERE \"organizationId\" = :organizationId AND \"lastSeenAt\" >= :since";
         return jdbc.queryForList(sql, new MapSqlParameterSource()
-                .addValue("organizationId", organizationId).addValue("since", since), String.class);
+                .addValue("organizationId", organizationId).addValue("since", Params.instant(since)), String.class);
     }
 
     @Override
@@ -47,7 +47,7 @@ public class JdbcTeamChatRepository implements TeamChatRepository {
         String sql = "SELECT 1 FROM \"TeamPresence\" WHERE \"organizationId\" = :organizationId AND \"userId\" = :userId AND \"lastSeenAt\" >= :since LIMIT 1";
         List<Integer> rows = jdbc.queryForList(sql, new MapSqlParameterSource()
                 .addValue("organizationId", organizationId).addValue("userId", userId)
-                .addValue("since", since), Integer.class);
+                .addValue("since", Params.instant(since)), Integer.class);
         return !rows.isEmpty();
     }
 

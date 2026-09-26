@@ -61,13 +61,13 @@ public class JdbcTicketRepository implements TicketRepository {
                 .addValue("sequenceNumber", ticket.getSequenceNumber())
                 .addValue("status", ticket.getStatusName())
                 .addValue("priority", ticket.getPriority())
-                .addValue("queueEnteredAt", ticket.getQueueEnteredAt())
+                .addValue("queueEnteredAt", Params.instant(ticket.getQueueEnteredAt()))
                 .addValue("assignedUserId", ticket.getAssignedUserId())
-                .addValue("assignedAt", ticket.getAssignedAt())
-                .addValue("firstResponseAt", ticket.getFirstResponseAt())
-                .addValue("waitingCustomerSince", ticket.getWaitingCustomerSince())
-                .addValue("finishedAt", ticket.getFinishedAt())
-                .addValue("lastMessageAt", ticket.getLastMessageAt());
+                .addValue("assignedAt", Params.instant(ticket.getAssignedAt()))
+                .addValue("firstResponseAt", Params.instant(ticket.getFirstResponseAt()))
+                .addValue("waitingCustomerSince", Params.instant(ticket.getWaitingCustomerSince()))
+                .addValue("finishedAt", Params.instant(ticket.getFinishedAt()))
+                .addValue("lastMessageAt", Params.instant(ticket.getLastMessageAt()));
         return jdbc.queryForObject(sql, params, MAPPER);
     }
 
@@ -128,7 +128,7 @@ public class JdbcTicketRepository implements TicketRepository {
         return jdbc.query(sql.toString(), params, (rs, i) -> new QueueTicket(
                 MAPPER.mapRow(rs, i), rs.getString("contactName"), rs.getString("contactPhone"),
                 rs.getString("assignedUserName"), rs.getString("lastMessageBody"),
-                (Instant) rs.getObject("lastMessageAt", Instant.class)));
+                Rows.ts(rs, "lastMessageAt")));
     }
 
     @Override
@@ -151,7 +151,7 @@ public class JdbcTicketRepository implements TicketRepository {
                   "assignedAt" = :now, "updatedAt" = :now
                 WHERE id = :id AND status IN ('WAITING','RETURNING') AND "assignedUserId" IS NULL""";
         int updated = jdbc.update(updateSql, new MapSqlParameterSource()
-                .addValue("id", candidateId).addValue("userId", userId).addValue("now", now));
+                .addValue("id", candidateId).addValue("userId", userId).addValue("now", Params.instant(now)));
         if (updated == 0) {
             return AssignResult.failure("ALREADY_ASSIGNED");
         }
@@ -166,7 +166,7 @@ public class JdbcTicketRepository implements TicketRepository {
                   "assignedAt" = :now, "updatedAt" = :now
                 WHERE id = :id AND status IN ('WAITING','RETURNING') AND "assignedUserId" IS NULL""";
         int updated = jdbc.update(updateSql, new MapSqlParameterSource()
-                .addValue("id", ticketId).addValue("userId", userId).addValue("now", now));
+                .addValue("id", ticketId).addValue("userId", userId).addValue("now", Params.instant(now)));
         if (updated == 0) {
             return AssignResult.failure("ALREADY_ASSIGNED");
         }
@@ -199,7 +199,7 @@ public class JdbcTicketRepository implements TicketRepository {
                 WHERE "organizationId" = :organizationId AND status = 'FINISHED'
                   AND "finishedAt" >= :dayStart""";
         Long finishedToday = jdbc.queryForObject(finishedSql, new MapSqlParameterSource()
-                .addValue("organizationId", organizationId).addValue("dayStart", dayStart), Long.class);
+                .addValue("organizationId", organizationId).addValue("dayStart", Params.instant(dayStart)), Long.class);
 
         String oldestSql = """
                 SELECT * FROM "Ticket"

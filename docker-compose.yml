@@ -103,13 +103,13 @@ services:
   #   WHATSAPP_DRIVER=waha  (no .env)  ->  docker compose up -d --no-recreate backend
   #
   # Image is pinned to the engine, not just the version:
-  #   arm-<ver>         WEBJS (headless Chromium) on arm64  ← default (full features)
-  #   gows-arm-<ver>    GOWS (Go, no browser) on arm64      ← much lighter, recommended
-  #   noweb-arm-<ver>   NOWEB (whatsapp-web.js) on arm64
+  #   gows-arm-<ver>    GOWS (Go, no browser) on arm64      ← default (full media, no Chromium)
+  #   arm-<ver>         WEBJS (headless Chromium) on arm64  ← sendVideo exige a variante `chrome` (só amd64)
+  #   noweb-arm-<ver>   NOWEB (Baileys, no browser) on arm64
   #   latest-<ver>      WEBJS on amd64 — use on x86 hosts
-  # Apple Silicon (this repo's dev host) must use an -arm tag: `latest` is amd64 only.
+  # Apple Silicon (this repo's dev host) must use an -arm tag: `latest`/`chrome` are amd64 only.
   waha:
-    image: ${WAHA_IMAGE:-devlikeapro/waha:arm-2026.8.2}
+    image: ${WAHA_IMAGE:-devlikeapro/waha:gows-arm-2026.9.1}
     restart: unless-stopped
     environment:
       # Host port 3000 is taken by the frontend, so WAHA listens on 3000 internally.

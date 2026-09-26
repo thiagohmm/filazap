@@ -7,6 +7,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.Map;
@@ -30,6 +31,12 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(Map.of("error", error.getMessage()));
     }
 
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<Map<String, String>> handleUploadTooLarge(MaxUploadSizeExceededException error) {
+        return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE)
+                .body(Map.of("error", "Arquivo excede o limite de 16 MB."));
+    }
+
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<Map<String, String>> handleNotFound(NoResourceFoundException error) {
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(Map.of("error", "Recurso não encontrado."));
@@ -39,7 +46,7 @@ public class GlobalExceptionHandler {
     public ResponseEntity<Map<String, String>> handleUnexpected(Exception error) {
         String message = error.getClass().getSimpleName() + ": " + error.getMessage();
         String sanitized = message.replace("\r", "").replace("\n", "");
-        log.error("Unexpected error: {}", sanitized);
+        log.error("Unexpected error: {}", sanitized, error);
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                 .body(Map.of("error", "Erro interno."));
     }

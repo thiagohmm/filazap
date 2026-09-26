@@ -67,7 +67,7 @@ public class JdbcOrganizationMemberRepository implements OrganizationMemberRepos
                 .addValue("memberId", input.memberId())
                 .addValue("organizationId", input.organizationId())
                 .addValue("userId", input.userId())
-                .addValue("now", input.now()));
+                .addValue("now", Params.instant(input.now())));
         if (removed != 1) {
             return new RemoveAgentResult(false, 0);
         }
@@ -85,7 +85,7 @@ public class JdbcOrganizationMemberRepository implements OrganizationMemberRepos
         int released = jdbc.update(releaseTickets, new MapSqlParameterSource()
                 .addValue("organizationId", input.organizationId())
                 .addValue("userId", input.userId())
-                .addValue("now", input.now()));
+                .addValue("now", Params.instant(input.now())));
         return new RemoveAgentResult(true, released);
     }
 
